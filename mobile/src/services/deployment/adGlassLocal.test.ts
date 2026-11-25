@@ -142,6 +142,15 @@ describe("account screens", () => {
     "/auth",
     "//auth/start",
     "/auth//start",
+    "auth/start",
+    "auth/start?x=1",
+    "/./auth/start",
+    "/../auth/start",
+    "/x/../auth/start",
+    "/%2e/auth/start",
+    "/%61uth/start",
+    "/AUTH/start",
+    "\\auth\\start",
   ])(
     "%s is replaced by the boot route",
     (path) => {
@@ -150,7 +159,19 @@ describe("account screens", () => {
     },
   )
 
-  it.each(["/", "/home", "/pairing/scan", "/miniapps/settings/main", "/authentic", "/applet/local?x=/auth/start"])(
+  it.each([
+    "/",
+    "/home",
+    "home",
+    "/pairing/scan",
+    "/miniapps/settings/main",
+    "/miniapps/settings//debug",
+    "/authentic",
+    "/auth%2Fstart",
+    "/applet/local?x=/auth/start",
+    "/applet/local?u=//auth/x",
+    "/applet/auth/../local",
+  ])(
     "%s is left alone",
     (path) => {
       expect(isAccountRoute(path)).toBe(false)

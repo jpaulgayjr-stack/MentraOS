@@ -33,9 +33,10 @@ const MENTRA_HOST = /(?<![A-Za-z0-9%.-])((?:[a-z0-9-]+\.)*(?:mentraglass\.com|me
 /**
  * A Mentra domain written as a bare suffix, which is how a hostname assembled at run time looks in the source
  * (`${region}.mentraglass.com`, `"core." + env + ".mentraglass.com"`): the literal scan above cannot name the host.
- * A leading dot directly after a quote, backtick, `}` or `+` is the tell.
+ * A leading dot directly after a quote, backtick, `}`, `)` (Swift's `\(region)`), a format placeholder (`%@`, `%s`)
+ * or `+` is the tell. It cannot see a host joined from an array of parts whose last part is a bare domain.
  */
-const BUILT_AT_RUN_TIME = /(?:[`'"}]|\+\s*["'`])\.(?:[a-z0-9-]+\.)*(?:mentraglass\.com|mentraglass\.cn|mentra\.glass)(?![A-Za-z0-9-])/gi
+const BUILT_AT_RUN_TIME = /(?:[`'"})]|%[@a-z]|\+\s*["'`])\.(?:[a-z0-9-]+\.)*(?:mentraglass\.com|mentraglass\.cn|mentra\.glass)(?![A-Za-z0-9-])/gi
 /** Matches that are not hostnames: an Android-style package name written in the sources. */
 const NOT_HOSTS = new Set(["com.mentra.glass"])
 /** Files whose job is to name these hosts. */
@@ -118,7 +119,14 @@ test("no Mentra hostname is assembled at run time, where this list could not nam
 })
 
 test("the run-time pattern recognises the usual ways of building a hostname", () => {
-  for (const sample of ["`https://${region}.mentraglass.com`", '"core." + env + ".mentraglass.com"', "'.mentra.glass'"]) {
+  for (const sample of [
+    "`https://${region}.mentraglass.com`",
+    '"core." + env + ".mentraglass.com"',
+    "'.mentra.glass'",
+    '"https://\\(region).mentraglass.com"',
+    '"https://%@.mentraglass.com"',
+    '"%s.mentraglass.com"',
+  ]) {
     assert.equal([...sample.matchAll(BUILT_AT_RUN_TIME)].length, 1, sample)
   }
   for (const sample of ['"https://core.mentraglass.com"', "apps.mentra.glass", "com.mentraglass"]) {

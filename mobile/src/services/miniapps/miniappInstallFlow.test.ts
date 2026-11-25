@@ -52,8 +52,12 @@ jest.mock("@/stores/navigation", () => ({
   useNavigationStore: {getState: () => ({clearHistoryAndGoHome: mockGoHome})},
 }))
 let mockDirectoryUrl: string | null = "https://api.apps.example.com/"
+/** The deployment's servers; AD Glass has `{coreUrl: null, runtimeUrl: null}`. Unset in upstream's cases. */
+let mockServices: {coreUrl: string | null; runtimeUrl: string | null} | undefined
 jest.mock("@/services/deployment", () => ({
-  deploymentStore: {getActive: () => ({manifest: {artifacts: {directoryUrl: mockDirectoryUrl}}})},
+  deploymentStore: {
+    getActive: () => ({manifest: {artifacts: {directoryUrl: mockDirectoryUrl}, services: mockServices}}),
+  },
 }))
 const mockAskPermissions = jest.fn(async (..._args: unknown[]) => 1)
 jest.mock("@/utils/PermissionsUtils", () => ({askPermissionsUI: (...args: unknown[]) => mockAskPermissions(...args)}))
@@ -97,6 +101,7 @@ beforeAll(async () => {
 beforeEach(() => {
   jest.clearAllMocks()
   mockDirectoryUrl = "https://api.apps.example.com/"
+  mockServices = undefined
   mockConfirm.mockResolvedValue(true)
   mockList.mockReturnValue([])
   jest.spyOn(console, "warn").mockImplementation(() => {})
@@ -329,6 +334,18 @@ describe("package links", () => {
     fetchMock.mockRejectedValue(new TypeError("Network request failed"))
     await expect(startListedMiniappInstall("com.example.notes", "link")).resolves.toBe("failed")
     expect(lastAlert()?.message).toBe("Couldn't reach the Mentra Miniapp Store. Check your connection and try again.")
+  })
+
+  // AD Glass: with no directory and no servers, a package link must not open Mentra's directory website.
+  it("says there is no directory, and opens no website, on a deployment with no servers", async () => {
+    mockDirectoryUrl = null
+    mockServices = {coreUrl: null, runtimeUrl: null}
+    const onPresent = jest.fn()
+    await expect(startListedMiniappInstall("com.example.notes", "scanner", {onPresent})).resolves.toBe("failed")
+    expect(mockOpenBrowser).not.toHaveBeenCalled()
+    expect(onPresent).toHaveBeenCalledTimes(1)
+    expect(lastAlert()).toMatchObject({title: "No miniapp directory"})
+    expect(JSON.stringify(lastAlert())).not.toMatch(/mentra/i)
   })
 
   it("opens the package's page in the browser when no directory is configured", async () => {

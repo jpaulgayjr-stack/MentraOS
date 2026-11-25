@@ -293,7 +293,8 @@ export default function DebugSettingsScreen() {
           )}
 
           {/* Super mode only: a wrong OTA manifest can brick glasses */}
-          {superMode && <OtaVersionUrl />}
+          {/* AD Glass: not shown with no servers; its presets are Mentra's test manifests and Save fetches them. */}
+          {superMode && !isCloudless(deploymentStore.getActive().manifest) && <OtaVersionUrl />}
 
           {superMode && <RouteButton label="Super Settings" onPress={() => push("/miniapps/settings/super")} />}
 

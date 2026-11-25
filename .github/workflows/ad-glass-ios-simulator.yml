@@ -370,12 +370,16 @@ jobs:
         run: |
           if [ -f "$RUNNER_TEMP/evidence/summary.md" ]; then
             cat "$RUNNER_TEMP/evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
-            for name in boot-all-text after-auth-link app-connections; do
+            for name in boot-all-text after-auth-link-1 after-auth-link-2 app-connections; do
               file="$RUNNER_TEMP/evidence/$name.txt"
               if [ -f "$file" ]; then echo "::group::$name"; cat "$file"; echo "::endgroup::"; fi
             done
             echo "::group::sinkhole log while the app ran (empty means no connection to a blocked host)"
-            cat "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl" || true
+            if [ -f "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl" ]; then
+              cat "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl"
+            else
+              echo "(not written: the boot script stopped before the app had run)"
+            fi
             echo "::endgroup::"
           fi
 

@@ -10,8 +10,9 @@ function systemRoute(path: string): string {
   if (path.startsWith("/")) return path
   try {
     const url = new URL(path)
-    // `<scheme>:///auth/start` has an empty host: the route is the path itself.
-    if (url.protocol === `${APP_SCHEME}:`) return url.hostname ? `/${url.hostname}${url.pathname}` : url.pathname
+    // Host and path together, however the link was written (`<scheme>://auth/start`, `<scheme>:///auth/start`,
+    // `<scheme>:auth/start`): isAccountRoute reads through empty and dot segments.
+    if (url.protocol === `${APP_SCHEME}:`) return `/${url.hostname}/${url.pathname}`
     return url.pathname
   } catch {
     return path

@@ -186,16 +186,27 @@ if xcrun simctl openurl "$udid" "${SCHEME}://auth/start" > "$OUT/openurl.txt" 2>
 else
   fail "iOS could not open a ${SCHEME}:// link: $(cat "$OUT/openurl.txt")"
 fi
-sleep 15
-shot "after-auth-link" || true
-connections "after the ${SCHEME}://auth/start link"
-if grep -qi -E "$UNWANTED" "$OUT/after-auth-link.txt" 2> /dev/null; then
-  fail "the ${SCHEME}://auth/start link opened a sign-in or error screen (see after-auth-link.png)"
-elif grep -qi "pair glasses" "$OUT/after-auth-link.txt" 2> /dev/null; then
-  pass "after a ${SCHEME}://auth/start link the app is on Home, not on a sign-in screen"
-else
-  fail "after a ${SCHEME}://auth/start link the home screen was not found (see after-auth-link.png)"
-fi
+# Every spelling of a link to an account screen: none may show one, and each must end on Home.
+link_number=0
+for link in "${SCHEME}://auth/start" "${SCHEME}:auth/start" "${SCHEME}:///auth/start" "${SCHEME}://./auth/start" \
+  "${SCHEME}://auth/workspace-signin" "${SCHEME}://auth/email-login"; do
+  link_number=$((link_number + 1))
+  name="after-auth-link-$link_number"
+  if [ "$link_number" -gt 1 ]; then xcrun simctl openurl "$udid" "$link" > /dev/null 2>&1 || true; fi
+  # Two looks: a screen that flashes and goes would be caught by the first.
+  sleep 3
+  shot "$name-early" || true
+  sleep 12
+  shot "$name" || true
+  connections "after the $link link"
+  if grep -qi -E "$UNWANTED" "$OUT/$name-early.txt" "$OUT/$name.txt" 2> /dev/null; then
+    fail "the link $link showed a sign-in or error screen (see $name-early.png and $name.png)"
+  elif grep -qi "pair glasses" "$OUT/$name.txt" 2> /dev/null; then
+    pass "after the link $link the app is on Home, and no sign-in screen was seen"
+  else
+    fail "after the link $link the home screen was not found (see $name.png)"
+  fi
+done
 if xcrun simctl openurl "$udid" "com.mentra://home" > "$OUT/openurl-mentra.txt" 2>&1; then
   fail "iOS opened a com.mentra:// link: something on the simulator still answers Mentra's scheme"
 else
@@ -208,7 +219,10 @@ else
 fi
 
 # ── 5. The verdict on the network ───────────────────────────────────────────
+# Stop the app first, so nothing it does goes uncounted.
 sleep 5
+xcrun simctl terminate "$udid" "$BUNDLE_ID" > /dev/null 2>&1 || true
+sleep 3
 cp "$SINK_LOG" "$OUT/sinkhole-during-app.jsonl"
 attempts="$(grep -c . "$SINK_LOG" 2> /dev/null || true)"
 if [ "${attempts:-0}" = "0" ]; then
@@ -241,7 +255,7 @@ note "## What this does not show"
 note ""
 note "Bluetooth does not exist in the simulator: pairing, the glasses display, the ring, the microphone and"
 note "on-device speech with real audio are unverified here. Only boot, about ${SETTLE_SECONDS}s on the home"
-note "screen and two links were observed. Only connections to the listed hostnames over TCP ports 80 and 443"
+note "screen and a handful of links were observed. Only connections to the listed hostnames over TCP ports 80 and 443"
 note "are counted: a host that is not on the list, another port, or UDP would not show. The app's open sockets"
 note "(app-connections.txt) are recorded for reading, not checked."
 note ""
