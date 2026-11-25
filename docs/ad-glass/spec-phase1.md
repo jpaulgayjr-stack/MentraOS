@@ -59,7 +59,11 @@ Kept deliberately small so upstream merges stay easy. One seam: a new variant in
 |---|---|
 | `mobile/app.config.ts` | Add a `VARIANTS.adglass` entry (`appName: "AD Glass"`, `appLinks: false`, `includeFirebase: false`, no Google plist, our icon) and select it. Read `appleTeamId` from `process.env.ADGLASS_APPLE_TEAM_ID` instead of the literal `T5XXXL6N36` (line 228). Pass `analytics: false` to the bluetooth-sdk plugin (lines 329-340). Remove the Sentry plugin entry (lines 458-475). Rewrite the word "Mentra" in the permission prompts (`NS*UsageDescription`, lines 247-288, and the `expo-media-library` and `expo-location` strings) by one small function over the generated `infoPlist`, not by editing each string. Set `CFBundleName`. |
 | `mobile/scripts/android-package-name.cjs` | Return `com.domingueandco.adglass` as the base. iOS takes its bundle ID from here (`app.config.ts:102-103`). |
-| `mobile/podspecs/onnxruntime-c.podspec`, one `extraPods` entry in `app.config.ts`, one line in `mobile/modules/bluetooth-sdk/ios/MentraBluetoothSDK.podspec` | Already done (commit `2b9c007b4`): ONNX Runtime from NuGet. Not a rebrand change; listed here because it is the only other edit to upstream files. |
+| `mobile/scripts/ad-glass.cjs` (new, with `ad-glass.d.cts` and `ad-glass.test.mjs`) | As built, the changes in the first row live here, not in `app.config.ts`: `app.config.ts` only adds the `adglass` variant and passes its finished config through `applyAdGlass`. The script drops Mentra's team id, removes the Sentry plugin, sets `analytics: false`, rewrites the permission prompts (including the `$(PRODUCT_NAME)` placeholder, which Xcode would show as "Mentra") and sets `CFBundleName`. It also registers a step that repeats the prompt rewrite while the native project is generated, because library plugins write their default prompts at that point. |
+| `mobile/src/services/deployment/officialManifest.ts` | `telemetry: false` (upstream `true`). This one flag gates Sentry and Firebase start-up in the app. `configuration.test.ts` in the same folder asserts the new value. |
+| `mobile/modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift` | One early return: the SDK's start-up "is there a newer SDK" call is skipped when the app has turned the SDK's analytics off. Upstream sends it regardless, to `core.mentraglass.com`, with a per-install id, the bundle ID and the OS version, and Mentra's Core forwards that to their PostHog project (`cloud-v2/packages/core/src/services/bluetooth-sdk-update.service.ts`). The only thing lost is a console banner for developers. iOS only: the Android twin (`BluetoothSdkUpdateCheck.kt`) is untouched because no Android build is planned. |
+| `mobile/modules/bluetooth-sdk/ios/Source/DeviceManager.swift` | The ring fix (section 3), marked with an "AD Glass" comment. |
+| `mobile/podspecs/onnxruntime-c.podspec`, one `extraPods` entry in `app.config.ts`, one line in `mobile/modules/bluetooth-sdk/ios/MentraBluetoothSDK.podspec` | Already done (commit `2b9c007b4`): ONNX Runtime from NuGet. Not a rebrand change; listed here so this table names every upstream file the fork edits. |
 | `mobile/assets/app-icons/ic_launcher.png`, `mobile/assets/logo/logo_light.png`, `logo_dark.png` | Replaced by neutral AD Glass art (home-screen icon and splash). |
 | `mobile/.env` (written by CI, never committed) | Production endpoints, empty Sentry DSN, placeholder Mapbox token. |
 | `LICENSE` (root and per module), `mobile/modules/acs-meeting/NOTICE` | Kept (upstream has no root `NOTICE` file). A short `docs/ad-glass/NOTICE-fork.md` states this is a modified fork of MentraOS under Apache 2.0 and that it is not affiliated with Mentra. |
@@ -105,7 +109,16 @@ xcodebuild build -workspace Mentra.xcworkspace -scheme Mentra -configuration Rel
   ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
 ```
 
-and a check that `Mentra.app` and its `main.jsbundle` exist. Release configuration is used so the JavaScript bundling step is proven too. The full `xcodebuild` log is uploaded as an artifact on every run.
+Release configuration is used so the JavaScript bundling step is proven too. The full `xcodebuild` log is uploaded as an artifact on every run. A cold run takes about 41 minutes, 33 of them compiling.
+
+The environment step writes `mobile/.env` from `.env.example`: production endpoints, an empty Sentry DSN, and `EXPO_PUBLIC_MENTRAOS_VERSION` taken from the root `package.json`. Upstream sets that version in `scripts/set-build-env.mjs`, which CI does not run; without it the app opens on an "App Version Missing" screen at every start and never runs the minimum-version check. The signed workflow must write the same file.
+
+Guards in the workflow (each fails the build):
+
+- Before anything is installed: the `ad-glass.cjs` unit tests, the ring fix, the update-check early return, `telemetry: false`, and the `applyAdGlass` call in `app.config.ts`.
+- On `.env`: every pinned value is set exactly once, to exactly the value the job pins.
+- On the generated Xcode project, a few minutes in: display name, `CFBundleName`, bundle ID, `MentraBluetoothSdkAnalyticsDisabled = true`, `FIREBASE_ANALYTICS_COLLECTION_ENABLED = false`, no permission prompt naming Mentra (other than the "Mentra Live" glasses) or `$(PRODUCT_NAME)`, no `GoogleService-Info` plist, no Sentry build step.
+- On the built app: the same Info.plist checks, the native version equal to the JavaScript version, all four production URLs present in `main.jsbundle`, and no Sentry DSN in `main.jsbundle`.
 
 ### 7.2 Signed archive and TestFlight (to write once secrets exist)
 
@@ -137,7 +150,7 @@ Build numbers come from Mentra's scheme in `mobile/scripts/build-number.mjs` (de
 
 - **Mentra's store app and AD Glass on the same phone.** Different bundle IDs, so both install. Both claim the `com.mentra` URL scheme in phase 1 and both will try to hold the glasses' Bluetooth connection. Rule: sign in to AD Glass with email and password, or remove the store app first; do not run both against the glasses at once.
 - **Sign in with Apple or Google.** Mentra's Core may refuse an OAuth return for a client it does not know (unknown; cannot be checked without a signed build). Email and password does not depend on the redirect. If Paul's account has no password, he sets one in the store app first.
-- **Forced update.** The app asks Runtime for a minimum version at boot (`src/utils/cloudVersion.ts`, `src/app/index.tsx:197-235`) and blocks below it, pointing at Mentra's App Store page. Our build reports upstream's version (3.5.0 today), so it tracks upstream as long as we merge upstream regularly. If the check cannot reach the server there is a "Continue Anyway" button.
+- **Forced update.** The app asks Runtime for a minimum version at boot (`src/utils/cloudVersion.ts`, `src/app/index.tsx:197-235`) and blocks below it, pointing at Mentra's App Store page. Our build reports upstream's version (3.5.0 today, written into `.env` by the workflow, section 7.1), so it tracks upstream as long as we merge upstream regularly. If the check cannot reach the server there is a "Continue Anyway" button.
 - **TestFlight builds expire after 90 days.** Rebuild at least every 80 days until phase 2 is done; after that the same rule still applies to any TestFlight install.
 - **Apple membership lapses or a new agreement is unsigned.** Uploads fail with a clear error; Paul accepts the agreement at https://developer.apple.com/account and the workflow is re-run.
 - **Upstream moves.** Merge `upstream/dev` into `ad-glass/main` through a PR inside the fork (never squash), simulator build green before merge.
@@ -148,9 +161,18 @@ A clean build downloads binaries from hosts we do not control: CocoaPods trunk, 
 
 ### The three most likely silent failures
 
-1. **Telemetry still leaving the phone.** A later upstream merge re-adds the Sentry plugin, a Firebase plist or the PostHog default. Guard: a check in the simulator workflow that the built `Info.plist` has `MentraBluetoothSdkAnalyticsDisabled = true`, that no `GoogleService-Info.plist` is in the app bundle, and that `main.jsbundle` contains no Sentry DSN.
-2. **The app builds but talks to Mentra's dev cloud.** The repo default is dev. Guard: the workflow writes the production URLs and asserts they are present in `main.jsbundle` (Mentra's `assertBundleEnvironment` in `mobile/scripts/release-bundle-config.mjs` does exactly this).
+1. **Telemetry still leaving the phone.** A later upstream merge re-adds the Sentry plugin, a Firebase plist, the PostHog default or the SDK's start-up call. Guards: section 7.1.
+2. **The app builds but talks to Mentra's dev cloud.** The repo default is dev. Guard: the workflow writes the production URLs and asserts all four literals are present in `main.jsbundle` (Mentra's `assertBundleEnvironment` in `mobile/scripts/release-bundle-config.mjs` does the same).
 3. **The ring fix quietly disappears** in an upstream merge conflict. Guard: a one-line grep in the workflow for `initController` inside `connectByName` in `DeviceManager.swift`, until upstream merges PR 4981.
+
+### What still reaches Mentra in phase 1 (accepted, removed in phase 2)
+
+Phase 1 keeps Mentra's login and cloud, so the app still talks to Mentra's Core and Runtime as the store app does. Beyond sign-in and the realtime session, two automatic uploads are worth knowing about (section 10, rows 3 and 7):
+
+- **Miniapp crash-loop reports.** If a miniapp crashes repeatedly, the engine sends its last log lines to Core `/api/client/reports` (`MentraJSCrashloopReportService.ts`). The `telemetry` flag does not gate this. Rule until phase 2: AD Home must not write business data (names, amounts, job details) to its console log.
+- **Support profile.** Phone and glasses model details go to Core at start and every 6 hours (`SupportProfileSync.ts`).
+
+The Firebase, Google App Measurement and Sentry native libraries are still linked into the app because their packages are still installed; they are never configured or started (no Firebase project file, collection flag off, no DSN, `telemetry: false`). Confidence that an unconfigured Google App Measurement library sends nothing: moderate, not observed on a device. Phase 2 removes the packages.
 
 ### Blast radius
 
@@ -191,7 +213,7 @@ There is no existing switch that skips login. The built-in "organization" mode c
 | | Login gate | `navigateToDestination`, `checkLoggedIn`, `handleTokenExchange` send a user with no session to `/auth/start`; the engine refuses to start without a subject token | `src/app/index.tsx:113-170`, `src/contexts/AuthContext.tsx:61-161`, `src/services/MantleManager.ts:447-520` | Boot straight to home with the local user |
 | | Other identity providers | Authing (China), Microsoft Entra and MSAL (`modules/entra-auth`, `msauth.<bundle>` scheme, ADAL keychain group) | `authingClient.ts:63-64`, `MicrosoftEntraDeploymentAuthProvider.ts`, `app.config.ts:242-246, 309-312` | Remove |
 | 2 | Version check | Runtime `GET /api/client/min-version`; cached floor that blocks even offline; store links `apps.apple.com/app/id6747363193`, `play.google.com` | `src/utils/cloudVersion.ts:3,21`, `src/app/index.tsx:197-265`, `src/constants/appConfig.ts:6-18` | Remove the check and the cached floor |
-| | Bluetooth SDK update check | `https://core.mentraglass.com/api/client/bluetooth-sdk/update-check`, hard-coded, runs on every SDK start regardless of analytics setting | `modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift:83` | Disable in native code |
+| | Bluetooth SDK update check | `https://core.mentraglass.com/api/client/bluetooth-sdk/update-check`, hard-coded; upstream runs it on every SDK start regardless of analytics setting, and Core forwards the install id to PostHog | `modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift:83` | Already off in phase 1 (section 5): skipped while the SDK's analytics are disabled. Phase 2 removes the code |
 | 3 | Settings and user-data sync | App settings are already local (MMKV). Still syncing: support profile to Core `/api/client/support-profile` every 6 hours, fleet `/api/client/fleet/{report,desired-state}`, workspaces `/api/client/workspaces*`, declared age `/api/account/declared-age`, Core token pushed to the glasses | `modules/engine/src/services/SupportProfileSync.ts`, `modules/engine/src/engine.ts:121-134`, `cloud-client/src/modules/core/*` | Do not start these services when Core is null |
 | 4 | Miniapp directory and install | Default list from Core `GET /api/client/deployment`; first-party miniapps (camera, gallery, settings, ai, navigation, call) installed from `miniapps.mentraglass.com/<package>/`; directory API `api.apps.mentraglass.com/api/directory/miniapps/<pkg>`; link hosts `apps.mentraglass.com`, `apps.mentra.glass`; Core registry `/api/client/registry/{register,status}` (non-blocking: install continues when unreachable) | `src/services/miniapps/defaultMiniapps.ts:30-66`, `officialManifest.ts:27-28`, `modules/engine/src/miniapp-links/index.ts:22-25,107-108`, `modules/engine/src/services/installMiniapp.ts:251,625-651` | Bundle the system miniapps we keep into the app; install AD Home from its own URL or a local ZIP; drop registry and directory |
 | | Launch | Local only (WebView or JS runtime). No cloud call | `MiniappLauncher.ts`, `LocalMiniappRuntime.ts` | Keep as is |
@@ -206,7 +228,7 @@ There is no existing switch that skips login. The built-in "organization" mode c
 | 10 | Maps | Mapbox Navigation SDK in `modules/crust`; live path goes through Runtime `/api/maps/*`; deprecated direct calls to `api.mapbox.com` | Section 6; `modules/engine/src/services/NavigationHandlers.ts:350-434` | Remove (section 6) |
 | 11 | Everything else | Universal links for `apps.mentraglass.com` (already dropped in phase 1); legal and docs links `mentraglass.com/privacy-policy`, `/terms-of-service`, `docs.mentraglass.com`; store review links; no push notifications and no support email found | `modules/engine/app.plugin.js:22-62`, `officialManifest.ts:46-48`, `appConfig.ts:6-17` | Null the links, hide the screens that show them |
 
-What AD Home needs from the engine, read from `C:\Users\jpaul\code\ad-home`: display rendering, phone calendar, location, storage, on-phone transcription with `preferLocal`, UI messages, actions and the system share sheet. It uses no Mentra account token and no cloud API, so none of the rows above is a dependency for it. Its package name `com.domingueandco.adhome` installs from its own URL.
+What AD Home needs from the engine, read from the AD Home repository: display rendering, phone calendar, location, storage, on-phone transcription with `preferLocal`, UI messages, actions and the system share sheet. It uses no Mentra account token and no cloud API, so none of the rows above is a dependency for it. Its package name `com.domingueandco.adhome` installs from its own URL.
 
 Expected behaviour today with Core and Runtime unreachable (inferred from the code, not tested): first login is impossible; a user who logged in before can still boot offline from cached tokens; installed local miniapps, Bluetooth control of the glasses and the local display keep working; cloud speech stops and on-device speech works if the models are already downloaded.
 
