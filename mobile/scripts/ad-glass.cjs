@@ -32,10 +32,42 @@ function isAdGlass(env = process.env) {
  */
 function rebrandText(value) {
   if (typeof value !== "string") return value
-  return value
-    .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
-    .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
-    .replace(/\bMentra\b(?! Live)/g, AD_GLASS.appName)
+  return (
+    value
+      // Xcode expands this to the project's product name, which stays "Mentra".
+      .replace(/\$\(PRODUCT_NAME\)/g, AD_GLASS.appName)
+      .replace(/\bMentraOS\b/g, AD_GLASS.appName)
+      .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
+      .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
+      .replace(/\bMentra\b(?! Live)/g, AD_GLASS.appName)
+  )
+}
+
+/** Rebrand every permission prompt (`NS...UsageDescription`) in an Info.plist object. */
+function rebrandPrompts(infoPlist) {
+  return mapValues(infoPlist, (key, value) => (/UsageDescription$/.test(key) ? rebrandText(value) : value))
+}
+
+/** AD Glass's Info.plist: our prompts, and the name iOS reports (the Xcode project keeps upstream's). */
+function adGlassInfoPlist(infoPlist) {
+  return {...rebrandPrompts(infoPlist), CFBundleName: AD_GLASS.appName}
+}
+
+/**
+ * Library plugins (expo-camera, expo-location, ...) write their own default
+ * prompts, such as "Allow $(PRODUCT_NAME) to access your camera", while the
+ * native project is generated: after applyAdGlass has run. This plugin applies
+ * adGlassInfoPlist again at that point. applyAdGlass lists it first and last
+ * because the order in which Expo runs such steps is Expo's business, and
+ * rewriting twice is harmless. Expo is loaded here, not at the top, so the unit
+ * tests run before dependencies are installed.
+ */
+function withAdGlassInfoPlist(config) {
+  const {withInfoPlist} = require("expo/config-plugins")
+  return withInfoPlist(config, (mod) => {
+    mod.modResults = adGlassInfoPlist(mod.modResults)
+    return mod
+  })
 }
 
 function mapValues(object, fn) {
@@ -49,12 +81,13 @@ function pluginName(plugin) {
 function adGlassPlugin(plugin) {
   if (!Array.isArray(plugin)) return plugin
   const [name, options] = plugin
-  if (!options || typeof options !== "object") return plugin
   if (name === BLUETOOTH_SDK_PLUGIN) {
     // The SDK's usage analytics post to Mentra's PostHog project and are on by
-    // default, whatever the app's own telemetry policy says.
-    return [name, {...options, analytics: false}]
+    // default, whatever the app's own telemetry policy says. Off even when
+    // upstream passes the plugin no options at all.
+    return [name, {...(options && typeof options === "object" ? options : {}), analytics: false}]
   }
+  if (!options || typeof options !== "object") return plugin
   if (name === SPLASH_PLUGIN) {
     return [
       name,
@@ -87,20 +120,20 @@ function applyAdGlass(config, env = process.env) {
   // workflow; an unsigned build has none.
   const {appleTeamId: _upstreamTeamId, ...ios} = config.ios ?? {}
   const teamId = env.ADGLASS_APPLE_TEAM_ID?.trim()
-  const infoPlist = mapValues(ios.infoPlist ?? {}, (key, value) =>
-    /UsageDescription$/.test(key) ? rebrandText(value) : value,
-  )
 
   return {
     ...config,
     ios: {
       ...ios,
       ...(teamId ? {appleTeamId: teamId} : {}),
-      // The Xcode project keeps upstream's name; this is the name iOS reports.
-      infoPlist: {...infoPlist, CFBundleName: AD_GLASS.appName},
+      infoPlist: adGlassInfoPlist(ios.infoPlist ?? {}),
     },
-    plugins: plugins.filter((plugin) => !REMOVED_PLUGINS.has(pluginName(plugin))).map(adGlassPlugin),
+    plugins: [
+      withAdGlassInfoPlist,
+      ...plugins.filter((plugin) => !REMOVED_PLUGINS.has(pluginName(plugin))).map(adGlassPlugin),
+      withAdGlassInfoPlist,
+    ],
   }
 }
 
-module.exports = {AD_GLASS, isAdGlass, applyAdGlass, rebrandText}
+module.exports = {AD_GLASS, isAdGlass, applyAdGlass, rebrandText, rebrandPrompts, withAdGlassInfoPlist}

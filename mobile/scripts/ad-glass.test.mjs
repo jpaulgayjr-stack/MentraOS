@@ -4,7 +4,7 @@ import {createRequire} from "node:module"
 import {test} from "node:test"
 
 const require = createRequire(import.meta.url)
-const {AD_GLASS, applyAdGlass, isAdGlass, rebrandText} = require("./ad-glass.cjs")
+const {AD_GLASS, applyAdGlass, isAdGlass, rebrandPrompts, rebrandText, withAdGlassInfoPlist} = require("./ad-glass.cjs")
 const {resolveAndroidPackageName} = require("./android-package-name.cjs")
 
 const BLUETOOTH = "./modules/bluetooth-sdk/app.plugin.js"
@@ -95,4 +95,36 @@ test("the build fails if the Bluetooth SDK plugin can no longer be found", () =>
   assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
   config.plugins.push(BLUETOOTH)
   assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
+})
+
+test("Bluetooth SDK analytics are off even when upstream passes the plugin no options", () => {
+  const config = upstreamConfig()
+  const isBluetooth = (plugin) => Array.isArray(plugin) && plugin[0] === BLUETOOTH
+  config.plugins = config.plugins.map((plugin) => (isBluetooth(plugin) ? [BLUETOOTH] : plugin))
+  const bluetooth = applyAdGlass(config, {}).plugins.find(isBluetooth)
+  assert.deepEqual(bluetooth[1], {analytics: false})
+})
+
+test("prompts that name the Xcode product, which stays Mentra, are ours too", () => {
+  const config = upstreamConfig()
+  config.plugins.push(["expo-camera", {cameraPermission: "Allow $(PRODUCT_NAME) to access your camera"}])
+  const {plugins} = applyAdGlass(config, {})
+  const camera = plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera")
+  assert.equal(camera[1].cameraPermission, "Allow AD Glass to access your camera")
+  // What a library plugin writes on its own while the native project is generated.
+  assert.deepEqual(
+    rebrandPrompts({
+      NSLocationAlwaysUsageDescription: "Allow $(PRODUCT_NAME) to use your location",
+      NSLocalNetworkUsageDescription: "Mentra talks to Mentra Live glasses.",
+      CFBundleName: "Mentra",
+    }),
+    {
+      NSLocationAlwaysUsageDescription: "Allow AD Glass to use your location",
+      NSLocalNetworkUsageDescription: "AD Glass talks to Mentra Live glasses.",
+      CFBundleName: "Mentra",
+    },
+  )
+  // The native-project pass is registered on both sides of every other plugin.
+  assert.equal(plugins[0], withAdGlassInfoPlist)
+  assert.equal(plugins.at(-1), withAdGlassInfoPlist)
 })
