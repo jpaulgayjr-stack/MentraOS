@@ -179,7 +179,14 @@ A miniapp whose age rating is above the app's own cannot launch: the gate needs 
 2. Start a sinkhole on ports 80 and 443 that accepts, logs (with the hostname the client asked for) and closes every connection.
 3. Self-tests, so an empty log means something: a request from the Mac and one from the simulator's own browser must each show up in the sinkhole log. The log is then cleared.
 4. Boot a simulator, install the built app, launch it, take screenshots at intervals for 75 seconds.
-5. Pass conditions: the app process is still running; text recognition (Apple's Vision framework, already on the runner) finds the home screen's "Pair glasses" text and no sign-in, update or error wording; iOS accepts an `adglass://` link; six spellings of a link to an account screen (`adglass://auth/start`, `adglass:auth/start`, `adglass:///auth/start`, `adglass://./auth/start` and two other screens) each end on Home with no sign-in wording seen three and fifteen seconds after; a `com.mentra://` link is not accepted; no crash report; the sinkhole log is empty once the app has been stopped; and the sinkhole still records a test request on both ports afterwards.
+5. Pass conditions:
+   - the app process is still running;
+   - text recognition (Apple's Vision framework, already on the runner) finds the home screen's "Pair glasses" text and no sign-in, update or error wording;
+   - iOS offers to open an `adglass://` link in AD Glass, and does not accept a `com.mentra://` link;
+   - no crash report;
+   - the sinkhole log is empty once the app has been stopped, and the sinkhole still records a test request on both ports afterwards;
+   - iOS's own network log for the app names every host it looked up, and none is Mentra's or an analytics service's. This look does not depend on the blocked list. On the first run the only hosts were `github.com` and `release-assets.githubusercontent.com` (the three speech models).
+   - Links to account screens: iOS asks "Open in AD Glass?" before handing over a link opened from outside the app. The script answers by pressing Return in the Simulator window, then checks that six spellings of an account link each end on Home with no sign-in wording. If the confirmation cannot be answered on the build machine, those lines are reported as NOT CHECKED rather than passed, and the route guards rest on their unit tests.
 6. Screenshots, recognized text, the app's open sockets and the sinkhole log are uploaded as artifacts and summarised on the run page.
 
 The sinkhole is used instead of an unroutable address because it proves more: an unroutable address only shows the app survives a failed call, the sinkhole shows no call was attempted.
@@ -227,6 +234,7 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 8. Add a note, force-quit, reopen: the note is still there.
 9. Use the share button on a note: the iOS share sheet opens.
 10. Leave it running for a day with the Mentra app deleted from the phone.
+11. Optional, one minute: in Safari's address bar type `adglass://auth/start` and tap Open. AD Glass comes to the front on its home screen, not on a sign-in page.
 
 ## 11. Edge cases
 

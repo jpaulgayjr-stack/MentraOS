@@ -370,7 +370,7 @@ jobs:
         run: |
           if [ -f "$RUNNER_TEMP/evidence/summary.md" ]; then
             cat "$RUNNER_TEMP/evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
-            for name in boot-all-text after-auth-link-1 after-auth-link-2 app-connections; do
+            for name in boot-all-text link-1-prompt link-1 link-2 app-connections; do
               file="$RUNNER_TEMP/evidence/$name.txt"
               if [ -f "$file" ]; then echo "::group::$name"; cat "$file"; echo "::endgroup::"; fi
             done

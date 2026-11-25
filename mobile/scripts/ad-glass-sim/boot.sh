@@ -180,33 +180,73 @@ else
 fi
 
 # ── 4. Links ────────────────────────────────────────────────────────────────
-# The app answers its own scheme, and a link to an account screen does not open one.
-if xcrun simctl openurl "$udid" "${SCHEME}://auth/start" > "$OUT/openurl.txt" 2>&1; then
-  pass "iOS hands ${SCHEME}:// links to the app (the scheme is registered)"
-else
-  fail "iOS could not open a ${SCHEME}:// link: $(cat "$OUT/openurl.txt")"
-fi
-# Every spelling of a link to an account screen: none may show one, and each must end on Home.
+# iOS knows the app's scheme, and a link to an account screen does not open one.
+#
+# iOS asks 'Open in "AD Glass"?' before it hands over a link opened from outside the app. That question is the
+# proof the scheme is registered to this app. To get the link delivered, something has to answer it: the script
+# presses Return in the Simulator window (the alert's default button is Open). Where that is not possible on the
+# build machine, the link checks are reported as NOT CHECKED, not as passed: the route guards then rest on their
+# unit tests alone.
+defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true > /dev/null 2>&1 || true
+open -a Simulator --args -CurrentDeviceUDID "$udid" > /dev/null 2>&1 || true
+sleep 8
+press_return() {
+  osascript -e 'tell application "Simulator" to activate' -e 'delay 1' \
+    -e 'tell application "System Events" to key code 36' > "$OUT/osascript.txt" 2>&1
+}
+asks_to_open() { grep -qi 'open in' "$OUT/$1.txt" 2> /dev/null; }
+
+can_deliver=""
 link_number=0
 for link in "${SCHEME}://auth/start" "${SCHEME}:auth/start" "${SCHEME}:///auth/start" "${SCHEME}://./auth/start" \
   "${SCHEME}://auth/workspace-signin" "${SCHEME}://auth/email-login"; do
   link_number=$((link_number + 1))
-  name="after-auth-link-$link_number"
-  if [ "$link_number" -gt 1 ]; then xcrun simctl openurl "$udid" "$link" > /dev/null 2>&1 || true; fi
-  # Two looks: a screen that flashes and goes would be caught by the first.
+  name="link-$link_number"
+  if ! xcrun simctl openurl "$udid" "$link" > "$OUT/$name.openurl.txt" 2>&1; then
+    fail "iOS could not open the link $link: $(cat "$OUT/$name.openurl.txt")"
+    continue
+  fi
   sleep 3
-  shot "$name-early" || true
+  shot "$name-prompt" || true
+  if [ "$link_number" -eq 1 ]; then
+    if asks_to_open "$name-prompt" && grep -qi 'AD Glass' "$OUT/$name-prompt.txt"; then
+      pass "iOS offers to open ${SCHEME}:// links in AD Glass (the scheme is registered to this app)"
+    elif asks_to_open "$name-prompt"; then
+      fail "iOS offers to open ${SCHEME}:// links, but not in AD Glass (see $name-prompt.png)"
+    else
+      pass "iOS accepts ${SCHEME}:// links (no confirmation was shown)"
+    fi
+  fi
+  if asks_to_open "$name-prompt"; then
+    press_return || true
+    sleep 3
+    shot "$name-early" || true
+    if asks_to_open "$name-early"; then
+      # Could not answer the alert. Put it away if possible and stop trying.
+      note "- NOT CHECKED: the link $link was not delivered: iOS's confirmation could not be answered on this machine"
+      if [ "$link_number" -eq 1 ]; then break; fi
+      continue
+    fi
+  else
+    cp "$OUT/$name-prompt.png" "$OUT/$name-early.png" 2> /dev/null || true
+    cp "$OUT/$name-prompt.txt" "$OUT/$name-early.txt" 2> /dev/null || true
+  fi
+  can_deliver="yes"
+  # Two looks: a screen that flashes and goes would be caught by the first.
   sleep 12
   shot "$name" || true
   connections "after the $link link"
   if grep -qi -E "$UNWANTED" "$OUT/$name-early.txt" "$OUT/$name.txt" 2> /dev/null; then
     fail "the link $link showed a sign-in or error screen (see $name-early.png and $name.png)"
   elif grep -qi "pair glasses" "$OUT/$name.txt" 2> /dev/null; then
-    pass "after the link $link the app is on Home, and no sign-in screen was seen"
+    pass "the link $link was delivered and the app is on Home; no sign-in screen was seen"
   else
     fail "after the link $link the home screen was not found (see $name.png)"
   fi
 done
+if [ -z "$can_deliver" ]; then
+  note "- NOT CHECKED: what the app does with a link to an account screen (no link could be delivered here)"
+fi
 if xcrun simctl openurl "$udid" "com.mentra://home" > "$OUT/openurl-mentra.txt" 2>&1; then
   fail "iOS opened a com.mentra:// link: something on the simulator still answers Mentra's scheme"
 else
@@ -242,6 +282,23 @@ fi
 cp "$SINK_LOG" "$OUT/sinkhole-selftest-after.jsonl"
 
 kill "$log_pid" > /dev/null 2>&1 || true
+
+# A second, independent look: iOS's own network log for the app names every host it looked up, whether or not the
+# host is on the blocked list. None may be Mentra's or an analytics service's. (The speech models come from GitHub.)
+grep -o -i -E 'hostname: [a-z0-9.-]+' "$OUT/app-log.txt" 2> /dev/null | awk '{print tolower($2)}' | sort -u \
+  > "$OUT/app-hostnames.txt" || true
+if [ -s "$OUT/app-hostnames.txt" ]; then
+  looked_up="$(tr '\n' ' ' < "$OUT/app-hostnames.txt")"
+  if grep -i -E 'mentraglass|mentra\.glass|posthog|sentry|app-measurement|firebase|crashlytics|google-analytics' \
+    "$OUT/app-hostnames.txt" > "$OUT/app-hostnames-unwanted.txt"; then
+    fail "the app looked up a Mentra or analytics host: $(tr '\n' ' ' < "$OUT/app-hostnames-unwanted.txt")"
+  else
+    pass "every host the app looked up, by iOS's own network log, is neither Mentra's nor an analytics service's: $looked_up"
+  fi
+else
+  note "- NOT CHECKED: which hosts the app looked up (its network log named none: either it made no request or the log was not captured)"
+fi
+
 reports="$HOME/Library/Logs/DiagnosticReports"
 ls "$reports" 2> /dev/null | grep -i -E "mentra|adglass" > "$OUT/crash-reports.txt" || true
 if [ -s "$OUT/crash-reports.txt" ]; then
@@ -255,11 +312,13 @@ note "## What this does not show"
 note ""
 note "Bluetooth does not exist in the simulator: pairing, the glasses display, the ring, the microphone and"
 note "on-device speech with real audio are unverified here. Only boot, about ${SETTLE_SECONDS}s on the home"
-note "screen and a handful of links were observed. Only connections to the listed hostnames over TCP ports 80 and 443"
+note "screen and the links listed above were observed. Only connections to the listed hostnames over TCP ports 80 and 443"
 note "are counted: a host that is not on the list, another port, or UDP would not show. The app's open sockets"
 note "(app-connections.txt) are recorded for reading, not checked."
 note ""
-if [ "$failures" -eq 0 ]; then
+if [ "$failures" -eq 0 ] && grep -q "NOT CHECKED" "$SUMMARY"; then
+  note "**Result: every check that could run passed. See the NOT CHECKED lines.**"
+elif [ "$failures" -eq 0 ]; then
   note "**Result: all checks passed.**"
 else
   note "**Result: $failures check(s) failed.**"
