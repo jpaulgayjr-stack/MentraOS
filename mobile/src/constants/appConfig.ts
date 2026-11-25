@@ -29,6 +29,7 @@ export const APP_STORE_REVIEW_URL = variant.appStoreReviewUrl
 export const CDN_BASE_URL = variant.cdnBaseUrl
 
 const scheme = Constants.expoConfig?.scheme
-/** This build's own URL scheme: `com.mentra`, or `com.mentra.dev` for the dev app (app.config.ts). Sign-in returns
- * to it, so with both apps on one phone each gets its own callback. */
+/** This build's own URL scheme, read from the packaged Expo config: `sightline` in a Sightline build
+ * (scripts/sightline.cjs sets it); upstream's are `com.mentra`, or `com.mentra.dev` for the dev app. The literal
+ * below is only the fallback where no Expo config exists (unit tests). */
 export const APP_SCHEME: string = (Array.isArray(scheme) ? scheme[0] : scheme) || "com.mentra"

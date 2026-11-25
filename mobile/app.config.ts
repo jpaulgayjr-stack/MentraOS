@@ -71,7 +71,8 @@ const VARIANTS = {
   },
   // Sightline (docs/sightline/spec-phase1.md): our own name, bundle id and icon,
   // no Firebase and no app links, which only Mentra's Apple team can claim. The
-  // scheme stays Mentra's in phase 1 because their sign-in returns through it.
+  // scheme written here is upstream's; applySightline (scripts/sightline.cjs)
+  // replaces it with `sightline` and fails the build if a Mentra scheme is left.
   sightline: {
     appName: SIGHTLINE.appName,
     packageName: SIGHTLINE.bundleId,

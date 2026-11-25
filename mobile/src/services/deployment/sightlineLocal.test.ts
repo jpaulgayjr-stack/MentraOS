@@ -10,6 +10,7 @@ import {
   saveDeploymentCloudOverrides,
 } from "./debugOverrides"
 import {isAccountRoute, routeForThisBuild} from "./localRoutes"
+import {isMiniappDevelopmentAllowed} from "./miniappDevelopmentPolicy"
 import {createConsumerDeployment} from "./officialManifest"
 import {DeploymentStore, deploymentStore, type DeploymentStorage} from "./store"
 
@@ -129,6 +130,13 @@ describe("what the engine is configured with", () => {
     expect(config.firstPartyMiniappsUrl).toBeNull()
     expect(config.localMiniappAllowlist).toBeNull()
     expect(config.localMiniappPolicy).toBeUndefined()
+  })
+})
+
+describe("miniapp development (how AD Home is installed)", () => {
+  it("is allowed by the embedded deployment, so Settings shows Miniapp Developer and its scanner installs", () => {
+    expect(isMiniappDevelopmentAllowed(createConsumerDeployment())).toBe(true)
+    expect(isMiniappDevelopmentAllowed(new DeploymentStore(new MemoryStorage()).getActive())).toBe(true)
   })
 })
 

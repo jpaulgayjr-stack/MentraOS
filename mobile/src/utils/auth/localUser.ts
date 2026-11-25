@@ -3,7 +3,12 @@
  * hand-off) does not import the auth client. See docs/sightline/spec-phase2.md.
  */
 
-/** Stable for the life of the install: per-account settings and miniapp storage are kept under it. */
+/**
+ * Stable for the life of the install: per-account settings and miniapp storage are kept under it. Do not change it
+ * once the app is on a phone: a miniapp's saved data (AD Home's notes) lives in a partition derived from this id, and
+ * the installed development build is selected under it, so a new value would hide both. If it ever has to change,
+ * migrate the data first.
+ */
 export const LOCAL_USER_ID = "local:sightline"
 
 /**
