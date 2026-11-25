@@ -11,7 +11,7 @@ import {deploymentManifestSchema} from "./schema"
 import {deploymentStore, DeploymentStore, type DeploymentStorage} from "./store"
 import type {ActiveDeployment, DeploymentCandidate} from "./types"
 
-// AD Glass embeds a deployment with no servers; this suite is about one that has them.
+// Sightline embeds a deployment with no servers; this suite is about one that has them.
 jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
 jest.mock("@/utils/cloudClient/devHost", () => ({METRO_AUTO: "metro-auto", devServerHost: jest.fn()}))
 
@@ -72,8 +72,8 @@ it("embeds a complete schema-v1 official manifest and respects build environment
   expect(manifest.auth).toEqual({mode: "mentra-account"})
   expect(manifest.glasses.allowedModelsOverride).toBeNull()
   expect(manifest.features.runtimeRealtimeSession).toBe(true)
-  // This suite runs against upstream's manifest (test-utils/mentraCloudManifest), which ships true. AD Glass's own
-  // manifest never starts Mentra's collection: adGlassManifest.test.ts asserts telemetry false there.
+  // This suite runs against upstream's manifest (test-utils/mentraCloudManifest), which ships true. Sightline's own
+  // manifest never starts Mentra's collection: sightlineManifest.test.ts asserts telemetry false there.
   expect(manifest.telemetry).toBe(true)
 })
 

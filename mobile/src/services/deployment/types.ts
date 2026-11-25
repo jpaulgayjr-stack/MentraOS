@@ -10,7 +10,7 @@ export interface MicrosoftEntraAuthConfig {
   teamsScopes: string[]
 }
 
-/** AD Glass: the person holding the phone is the only user. No account service. */
+/** Sightline: the person holding the phone is the only user. No account service. */
 export interface LocalAuthConfig {
   mode: "local"
 }

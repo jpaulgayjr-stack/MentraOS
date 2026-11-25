@@ -5,8 +5,8 @@ import {afterEach, beforeEach, describe, expect, mock, test} from "bun:test"
 import {bluetoothSdk} from "./bluetoothSdkTestMock"
 import {reactNative} from "./reactNativeTestMock"
 
-// AD Glass: with neither Core nor Runtime the engine must build no cloud client, so nothing that needs the cloud
-// gets as far as a request. See docs/ad-glass/spec-phase2.md.
+// Sightline: with neither Core nor Runtime the engine must build no cloud client, so nothing that needs the cloud
+// gets as far as a request. See docs/sightline/spec-phase2.md.
 ;(globalThis as {__DEV__?: boolean}).__DEV__ = false
 reactNative.Platform = {OS: "ios", Version: "26.0"}
 bluetoothSdk.updateBluetoothSettings = mock(async () => {})
@@ -53,12 +53,12 @@ type Config = {
 const CLOUDLESS: Config = {
   coreUrl: null,
   runtimeUrl: null,
-  // What the AD Glass host hands over: its resolver answers with the manifest's nulls.
+  // What the Sightline host hands over: its resolver answers with the manifest's nulls.
   resolveCloudEndpoints: () => ({core: null, runtime: null}),
   runtimeRealtimeSession: false,
 }
 let config: Config = CLOUDLESS
-let hostUserId: (() => Promise<string>) | undefined = async () => "local:adglass"
+let hostUserId: (() => Promise<string>) | undefined = async () => "local:sightline"
 
 mock.module("../../runtime/bootstrap", () => ({
   // The local host supplies an identity and nothing to exchange for a token.
@@ -107,7 +107,7 @@ const {cloudClientService} = await import("../CloudClientService")
 beforeEach(() => {
   FakeCloudClient.built = 0
   config = CLOUDLESS
-  hostUserId = async () => "local:adglass"
+  hostUserId = async () => "local:sightline"
   kept.clear()
 })
 
@@ -172,8 +172,8 @@ describe("the engine with neither Core nor Runtime", () => {
 
   test("partitions miniapp storage by the host's local user, with no token exchange", async () => {
     cloudClientService.init()
-    expect(await cloudClientService.resolveMentraUserId()).toBe("local:adglass")
-    expect(cloudClientService.getMentraUserId()).toBe("local:adglass")
+    expect(await cloudClientService.resolveMentraUserId()).toBe("local:sightline")
+    expect(cloudClientService.getMentraUserId()).toBe("local:sightline")
     expect(FakeCloudClient.built).toBe(0)
   })
 

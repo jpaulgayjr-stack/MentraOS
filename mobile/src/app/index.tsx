@@ -16,7 +16,7 @@ import {SplashVideo} from "@/components/splash/SplashVideo"
 import {resolvedEndpoints} from "@/services/cloudClient"
 import {fetchMinimumClientVersion} from "@/utils/cloudVersion"
 import {refreshWorkspaceManifest, useDeployment} from "@/services/deployment"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {deploymentDebugOverrides} from "@/services/deployment/debugOverrides"
 import {
   cloudSwitchSignsOut,
@@ -77,7 +77,7 @@ export default function InitScreen() {
   const [isRetrying, setIsRetrying] = useState(false)
   const [isBlockedByVersion, setIsBlockedByVersion] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
-  // AD Glass: no server to ask about versions, and no account to sign in to.
+  // Sightline: no server to ask about versions, and no account to sign in to.
   const cloudless = isCloudless(activeDeployment.manifest)
   // Zustand store hooks
   // Runtime is the canonical boot version-policy service. Core keeps its
@@ -127,7 +127,7 @@ export default function InitScreen() {
     const onboardingDone = engine.settings.get(SETTINGS.onboarding_completed.key)
     const wearable = engine.settings.get(SETTINGS.default_wearable.key)
 
-    // AD Glass goes straight to Home, whose first-run card offers pairing.
+    // Sightline goes straight to Home, whose first-run card offers pairing.
     if (!cloudless && !onboardingDone && !wearable) {
       await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY))
       replace("/onboarding/welcome", {transition: "fade"})
@@ -149,7 +149,7 @@ export default function InitScreen() {
   }, [user, getPendingRoute, processUrl, clearHistoryAndGoHome, replace, replaceAll, setPendingRoute, setAnimation])
 
   /**
-   * AD Glass boot: start the engine as the local user and go Home. No version
+   * Sightline boot: start the engine as the local user and go Home. No version
    * check, no cached version floor, no token exchange, no network.
    */
   const bootLocal = async (): Promise<void> => {
@@ -344,7 +344,7 @@ export default function InitScreen() {
         return {
           icon: "circle-x",
           iconColor: theme.colors.destructive,
-          title: "AD Glass could not start",
+          title: "Sightline could not start",
           description: startError ?? "Unknown error",
         }
 

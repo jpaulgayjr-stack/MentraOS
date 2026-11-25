@@ -6,9 +6,9 @@ import {readFileSync} from "node:fs"
 import {readSpeechProcessing} from "../TranscriptionRouting"
 import {prepareTtsSentences} from "../TtsTextSanitizer"
 
-// AD Glass: where cloud speech is off, speak() is on-device or it fails. It never asks the cloud, whatever the
+// Sightline: where cloud speech is off, speak() is on-device or it fails. It never asks the cloud, whatever the
 // miniapp asked for and whatever the cloud client claims. Runs the real handler, as LocalMiniappRuntime.speech.test.ts
-// does. See docs/ad-glass/spec-phase2.md.
+// does. See docs/sightline/spec-phase2.md.
 const source = readFileSync(new URL("../LocalMiniappRuntime.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const methods = ["handleSpeak", "cancelSpeech"]
   .map((name) => {

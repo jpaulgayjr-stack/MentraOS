@@ -995,10 +995,10 @@ describe("MantleManager", () => {
     },
   )
 
-  // AD Glass (docs/ad-glass/spec-phase2.md): the engine is started as the local user, with no server and no token.
+  // Sightline (docs/sightline/spec-phase2.md): the engine is started as the local user, with no server and no token.
   it("hands the engine the local user, no token source, and a deployment with no servers", async () => {
     expect(Object.keys(engineAuth)).toEqual(["getUserId"])
-    expect(await engineAuth.getUserId()).toBe("local:adglass")
+    expect(await engineAuth.getUserId()).toBe("local:sightline")
     expect(miniappConfig.coreUrl).toBeNull()
     expect(miniappConfig.runtimeUrl).toBeNull()
     expect(miniappConfig.runtimeRealtimeSession).toBe(false)

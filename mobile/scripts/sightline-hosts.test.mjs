@@ -1,9 +1,9 @@
-// Run with: node --test mobile/scripts/ad-glass-hosts.test.mjs
+// Run with: node --test mobile/scripts/sightline-hosts.test.mjs
 //
-// AD Glass must never contact a server Mentra owns. The simulator job proves
-// that for the hostnames in ad-glass-blocked-hosts.txt; this test keeps that
+// Sightline must never contact a server Mentra owns. The simulator job proves
+// that for the hostnames in sightline-blocked-hosts.txt; this test keeps that
 // list complete: every Mentra hostname written anywhere in the app's sources
-// has to be in it. See docs/ad-glass/spec-phase2.md.
+// has to be in it. See docs/sightline/spec-phase2.md.
 import assert from "node:assert/strict"
 import {readdirSync, readFileSync, statSync} from "node:fs"
 import {dirname, extname, join, relative, resolve, sep} from "node:path"
@@ -40,9 +40,9 @@ const BUILT_AT_RUN_TIME = /(?:[`'"})]|%[@a-z]|\+\s*["'`])\.(?:[a-z0-9-]+\.)*(?:m
 /** Matches that are not hostnames: an Android-style package name written in the sources. */
 const NOT_HOSTS = new Set(["com.mentra.glass"])
 /** Files whose job is to name these hosts. */
-const SELF = new Set(["mobile/scripts/ad-glass-hosts.test.mjs"])
+const SELF = new Set(["mobile/scripts/sightline-hosts.test.mjs"])
 
-export function readBlockedHosts(file = join(here, "ad-glass-blocked-hosts.txt")) {
+export function readBlockedHosts(file = join(here, "sightline-blocked-hosts.txt")) {
   return readFileSync(file, "utf8")
     .split(/\r?\n/)
     .map((line) => line.replace(/#.*/, "").trim())
@@ -103,8 +103,8 @@ test("every Mentra hostname in the app's sources is blocked in the simulator job
   assert.deepEqual(
     missing,
     [],
-    "Mentra hostnames that are in the sources but not in mobile/scripts/ad-glass-blocked-hosts.txt. " +
-      "Check what uses each one, make sure AD Glass cannot reach it, then add it to the list.",
+    "Mentra hostnames that are in the sources but not in mobile/scripts/sightline-blocked-hosts.txt. " +
+      "Check what uses each one, make sure Sightline cannot reach it, then add it to the list.",
   )
 })
 
@@ -113,7 +113,7 @@ test("no Mentra hostname is assembled at run time, where this list could not nam
     scanSources().assembled,
     [],
     "A Mentra domain appears as a bare suffix, so some code builds a hostname from parts. Work out every host it can " +
-      "produce, make sure AD Glass cannot reach them, add them to the blocked-hosts list, and only then teach this " +
+      "produce, make sure Sightline cannot reach them, add them to the blocked-hosts list, and only then teach this " +
       "test about the pattern.",
   )
 })

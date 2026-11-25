@@ -1,7 +1,7 @@
 import {storage} from "@/utils/storage/storage"
 
 import type {ActiveDeployment, DeploymentCandidate, DeploymentManifest, WorkspaceDeployment} from "./types"
-import {isCloudless} from "./adGlassManifest"
+import {isCloudless} from "./sightlineManifest"
 import {withClearedDeploymentDebugOverrides} from "./debugOverrides"
 import {createConsumerDeployment} from "./officialManifest"
 import {deploymentManifestSchema} from "./schema"
@@ -50,7 +50,7 @@ export class DeploymentStore {
   constructor(private readonly persistence: DeploymentStorage = new MmkvDeploymentStorage()) {
     const embedded = createConsumerDeployment()
     if (isCloudless(embedded.manifest)) {
-      // AD Glass: this build has one deployment and no account to choose it
+      // Sightline: this build has one deployment and no account to choose it
       // with. A first run is already resolved, and a stored organization
       // selection (there should be none) is not honoured.
       this.active = embedded

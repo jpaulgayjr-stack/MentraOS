@@ -1,8 +1,8 @@
-// Run with: node --test mobile/scripts/ad-glass-jest-gate.test.mjs
+// Run with: node --test mobile/scripts/sightline-jest-gate.test.mjs
 import assert from "node:assert/strict"
 import {test} from "node:test"
 
-import {CANNOT_RUN_HERE, judge} from "./ad-glass-jest-gate.mjs"
+import {CANNOT_RUN_HERE, judge} from "./sightline-jest-gate.mjs"
 
 const ROOT = "/repo/mobile"
 const [KNOWN] = [...CANNOT_RUN_HERE.keys()]

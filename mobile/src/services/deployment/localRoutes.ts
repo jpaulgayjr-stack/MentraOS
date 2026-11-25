@@ -1,8 +1,8 @@
-import {isCloudless} from "./adGlassManifest"
+import {isCloudless} from "./sightlineManifest"
 import {createOfficialManifest} from "./officialManifest"
 
 /**
- * AD Glass has no account, so the sign-in, sign-up, password and organization
+ * Sightline has no account, so the sign-in, sign-up, password and organization
  * screens under `/auth` must never open, whoever asks for them: a stale deep
  * link, the link fallback, a debug tool. They are still in the bundle (removing
  * them is a later clean-up); this keeps them unreachable.
@@ -14,7 +14,7 @@ import {createOfficialManifest} from "./officialManifest"
  */
 const NO_ACCOUNT_SCREENS = isCloudless(createOfficialManifest())
 
-/** Whether this build has account screens at all. AD Glass does not. */
+/** Whether this build has account screens at all. Sightline does not. */
 export function hasAccountScreens(): boolean {
   return !NO_ACCOUNT_SCREENS
 }

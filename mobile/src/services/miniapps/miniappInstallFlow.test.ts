@@ -52,7 +52,7 @@ jest.mock("@/stores/navigation", () => ({
   useNavigationStore: {getState: () => ({clearHistoryAndGoHome: mockGoHome})},
 }))
 let mockDirectoryUrl: string | null = "https://api.apps.example.com/"
-/** The deployment's servers; AD Glass has `{coreUrl: null, runtimeUrl: null}`. Unset in upstream's cases. */
+/** The deployment's servers; Sightline has `{coreUrl: null, runtimeUrl: null}`. Unset in upstream's cases. */
 let mockServices: {coreUrl: string | null; runtimeUrl: string | null} | undefined
 jest.mock("@/services/deployment", () => ({
   deploymentStore: {
@@ -336,7 +336,7 @@ describe("package links", () => {
     expect(lastAlert()?.message).toBe("Couldn't reach the Mentra Miniapp Store. Check your connection and try again.")
   })
 
-  // AD Glass: with no directory and no servers, a package link must not open Mentra's directory website.
+  // Sightline: with no directory and no servers, a package link must not open Mentra's directory website.
   it("says there is no directory, and opens no website, on a deployment with no servers", async () => {
     mockDirectoryUrl = null
     mockServices = {coreUrl: null, runtimeUrl: null}

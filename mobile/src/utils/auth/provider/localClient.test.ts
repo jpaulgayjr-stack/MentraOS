@@ -2,7 +2,7 @@ import {LOCAL_SESSION_MARKER, LOCAL_USER_ID} from "@/utils/auth/localUser"
 
 import {LocalAuthProvider} from "./localClient"
 
-// AD Glass: one local user, and no account service to call. See docs/ad-glass/spec-phase2.md.
+// Sightline: one local user, and no account service to call. See docs/sightline/spec-phase2.md.
 
 const fetchSpy = jest.fn(() => Promise.reject(new Error("the local user must not reach the network")))
 const originalFetch = global.fetch
@@ -23,10 +23,10 @@ it("always has the same signed-in user, with no email", async () => {
   if (!session.is_ok()) return
   expect(session.value).toEqual({
     token: LOCAL_SESSION_MARKER,
-    user: {id: LOCAL_USER_ID, name: "AD Glass", provider: "local"},
+    user: {id: LOCAL_USER_ID, name: "Sightline", provider: "local"},
   })
   const user = await provider.getUser()
-  expect(user.is_ok() && user.value).toEqual({id: "local:adglass", name: "AD Glass", provider: "local"})
+  expect(user.is_ok() && user.value).toEqual({id: "local:sightline", name: "Sightline", provider: "local"})
   // A second provider (a relaunch) is the same user: settings and miniapp storage are kept under this id.
   const again = await new LocalAuthProvider().getSession()
   expect(again.is_ok() && again.value.user?.id).toBe(LOCAL_USER_ID)

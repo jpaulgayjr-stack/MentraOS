@@ -124,7 +124,7 @@ function createLazyAuthClient(): AuthClient {
       initPromise = (async () => {
         const isChina = engine.settings.get(SETTINGS.china_deployment.key)
         if (deploymentStore.getActive().manifest.auth.mode === "local") {
-          // AD Glass: no account service. The person holding the phone is the user.
+          // Sightline: no account service. The person holding the phone is the user.
           client = new LocalAuthProvider()
         } else if (isChina) {
           client = await AuthingWrapperClient.getInstance()

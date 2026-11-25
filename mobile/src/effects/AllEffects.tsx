@@ -17,7 +17,7 @@ import {PhoneWifiOverlay} from "@/effects/PhoneWifiOverlay"
 import {FleetSheets} from "@/effects/FleetSheets"
 import {RunningUpdatePrompt} from "@/effects/RunningUpdatePrompt"
 import {useDeployment} from "@/services/deployment"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 // import TranscriptionsListener from "@/effects/TranscriptionsListener"
 // import SherpaTest from "@/effects/SherpaTest"
 // import WhisperTest from "@/effects/WhisperTest"
@@ -25,7 +25,7 @@ import {isCloudless} from "@/services/deployment/adGlassManifest"
 
 export const AllEffects = () => {
   const {selectionResolved, activeDeployment} = useDeployment()
-  // AD Glass: with no server, nothing asks for feedback or talks to Fleet.
+  // Sightline: with no server, nothing asks for feedback or talks to Fleet.
   const hasCloud = !isCloudless(activeDeployment.manifest)
 
   return (

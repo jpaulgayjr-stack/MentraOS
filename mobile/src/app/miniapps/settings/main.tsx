@@ -13,7 +13,7 @@ import {useNavigationStore} from "@/stores/navigation"
 import {translate} from "@/i18n"
 import {refreshMyWorkspace, useMyWorkspaceStore} from "@/services/fleet/myWorkspace"
 import {useDeployment} from "@/services/deployment"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {isMiniappDevelopmentAllowed} from "@/services/deployment/miniappDevelopmentPolicy"
 import {SETTINGS, useSetting} from "@mentra/engine"
 import {useCallback, useRef} from "react"
@@ -51,7 +51,7 @@ export default function MainSettingsPage() {
         // Keep the indicator at the viewport edge during the miniapp's animated transitions.
         automaticallyAdjustsScrollIndicatorInsets={false}>
         <View style={{flex: 1, gap: theme.spacing.s6}}>
-          {/* AD Glass: no account to manage and nobody to send feedback to. */}
+          {/* Sightline: no account to manage and nobody to send feedback to. */}
           {!isCloudless(activeDeployment.manifest) && (
             <Group title={translate("account:accountSettings")}>
               <RouteButton

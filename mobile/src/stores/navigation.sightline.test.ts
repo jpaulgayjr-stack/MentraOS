@@ -2,8 +2,8 @@ import {router} from "expo-router"
 
 import {useNavigationStore} from "./navigation"
 
-// AD Glass: every navigation goes through this store, and none of them may open an account screen.
-// See docs/ad-glass/spec-phase2.md.
+// Sightline: every navigation goes through this store, and none of them may open an account screen.
+// See docs/sightline/spec-phase2.md.
 
 jest.mock("expo-router", () => ({
   router: {push: jest.fn(), replace: jest.fn(), navigate: jest.fn(), back: jest.fn(), canGoBack: () => false},

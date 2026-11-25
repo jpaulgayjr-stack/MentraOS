@@ -1,6 +1,6 @@
-// AD Glass: decide whether a jest run passes.
+// Sightline: decide whether a jest run passes.
 //
-//   jest --json --outputFile=jest.json ; node mobile/scripts/ad-glass-jest-gate.mjs jest.json
+//   jest --json --outputFile=jest.json ; node mobile/scripts/sightline-jest-gate.mjs jest.json
 //
 // Every test must pass. The only suites allowed to fail are the ones listed
 // below, and only by failing to load: they read source files of Mentra's
@@ -69,7 +69,7 @@ export function judge(report, root) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const file = process.argv[2]
   if (!file) {
-    console.error("usage: node ad-glass-jest-gate.mjs <jest --json output file> [directory jest ran in]")
+    console.error("usage: node sightline-jest-gate.mjs <jest --json output file> [directory jest ran in]")
     process.exit(2)
   }
   let report

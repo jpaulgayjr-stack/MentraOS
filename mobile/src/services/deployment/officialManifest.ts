@@ -1,14 +1,14 @@
-import {createAdGlassManifest} from "./adGlassManifest"
+import {createSightlineManifest} from "./sightlineManifest"
 import type {ConsumerDeployment, DeploymentManifest} from "./types"
 
 /**
- * AD Glass: the embedded deployment is the local one. Upstream builds Mentra's
+ * Sightline: the embedded deployment is the local one. Upstream builds Mentra's
  * manifest here from `EXPO_PUBLIC_CLOUD_*`; this build reads none of them, so
  * no build environment can name a server. On an upstream merge conflict in
- * this file, keep this version (docs/ad-glass/spec-phase2.md).
+ * this file, keep this version (docs/sightline/spec-phase2.md).
  */
 export function createOfficialManifest(): DeploymentManifest {
-  return createAdGlassManifest()
+  return createSightlineManifest()
 }
 
 export function createConsumerDeployment(): ConsumerDeployment {

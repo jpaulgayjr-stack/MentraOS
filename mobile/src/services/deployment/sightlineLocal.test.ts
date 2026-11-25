@@ -2,7 +2,7 @@ import {engine, SETTINGS} from "@mentra/engine"
 
 import {deploymentCloudConfigValues, resolvedEndpoints} from "@/services/cloudClient"
 
-import {isCloudless} from "./adGlassManifest"
+import {isCloudless} from "./sightlineManifest"
 import {
   coreOverrideChangesCore,
   deploymentDebugOverrides,
@@ -13,8 +13,8 @@ import {isAccountRoute, routeForThisBuild} from "./localRoutes"
 import {createConsumerDeployment} from "./officialManifest"
 import {DeploymentStore, deploymentStore, type DeploymentStorage} from "./store"
 
-// AD Glass: the app is its own single deployment from the first launch, and nothing saved on the phone can give it
-// a server. See docs/ad-glass/spec-phase2.md.
+// Sightline: the app is its own single deployment from the first launch, and nothing saved on the phone can give it
+// a server. See docs/sightline/spec-phase2.md.
 
 class MemoryStorage implements DeploymentStorage {
   constructor(public value: unknown | null = null) {}
@@ -66,7 +66,7 @@ describe("the deployment store", () => {
 
   it("is what the app uses", () => {
     expect(deploymentStore.isResolved()).toBe(true)
-    expect(deploymentStore.getActive().manifest.deploymentId).toBe("ad-glass-local")
+    expect(deploymentStore.getActive().manifest.deploymentId).toBe("sightline-local")
   })
 })
 

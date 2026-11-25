@@ -8,7 +8,7 @@ import {
   miniappDeveloperPackageName,
   shouldHideMiniapp as shouldHideByPolicy,
 } from "@/constants/miniapps"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {isMiniappDevelopmentAllowed} from "@/services/deployment/miniappDevelopmentPolicy"
 import {deploymentStore} from "@/services/deployment/store"
 import type {ActiveDeployment} from "@/services/deployment/types"
@@ -38,7 +38,7 @@ export function isDeploymentManagedCall(deployment: ActiveDeployment = deploymen
 export const shouldSkipMiniappInstall = (packageName: string): boolean => {
   if (!isSuperModeMiniappAllowed(packageName)) return true
   const deployment = deploymentStore.getActive()
-  // AD Glass: Feedback only files reports with Mentra; with no server it has nothing to do.
+  // Sightline: Feedback only files reports with Mentra; with no server it has nothing to do.
   if (packageName === feedbackPackageName && isCloudless(deployment.manifest)) return true
   if (packageName === mentraCallPackageName && deployment.kind === "workspace") {
     return !isDeploymentManagedCall(deployment)

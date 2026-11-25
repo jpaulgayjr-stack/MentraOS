@@ -2,8 +2,8 @@ import {render} from "@testing-library/react-native"
 
 import AccountScreensLayout from "@/app/auth/_layout"
 
-// AD Glass: the layout that wraps every screen under /auth sends the app back to the boot route instead of showing
-// one, whatever link or navigation the router resolved to get there. See docs/ad-glass/spec-phase2.md.
+// Sightline: the layout that wraps every screen under /auth sends the app back to the boot route instead of showing
+// one, whatever link or navigation the router resolved to get there. See docs/sightline/spec-phase2.md.
 
 const mockRedirect = jest.fn()
 const mockSlot = jest.fn()

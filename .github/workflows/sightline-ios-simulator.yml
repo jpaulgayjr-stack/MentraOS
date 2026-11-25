@@ -1,6 +1,6 @@
-# AD Glass: build the phone app on GitHub's free hosted runners and prove, as
+# Sightline: build the phone app on GitHub's free hosted runners and prove, as
 # far as a machine without Bluetooth can, that it works with Mentra out of the
-# picture (docs/ad-glass/spec-phase2.md).
+# picture (docs/sightline/spec-phase2.md).
 #
 #   tests      unit tests and the fork's static guards (Linux)
 #   simulator  unsigned Release build for the iOS Simulator, with guards on the
@@ -14,12 +14,12 @@
 #
 # Deliberately independent of Mentra's own workflows: those need their
 # self-hosted Mac, their match-certs repo and their Doppler / R2 secrets.
-name: AD Glass iOS simulator build
+name: Sightline iOS simulator build
 
 on:
   push:
     branches:
-      - "ad-glass/**"
+      - "sightline/**"
     paths:
       - "mobile/**"
       - "cloud-v2/packages/cloud-client/**"
@@ -29,7 +29,7 @@ on:
       - "bun.lock"
       # mobile/scripts/build-number.mjs imports it.
       - ".github/scripts/release-family.mjs"
-      - ".github/workflows/ad-glass-ios-simulator.yml"
+      - ".github/workflows/sightline-ios-simulator.yml"
   workflow_dispatch:
     inputs:
       app_run_id:
@@ -38,7 +38,7 @@ on:
         default: ""
 
 concurrency:
-  group: ad-glass-ios-simulator-${{ github.ref }}
+  group: sightline-ios-simulator-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -68,9 +68,9 @@ jobs:
 
       - name: Fork guards (config, hostnames, scripts, engine)
         run: |
-          node --test mobile/scripts/ad-glass.test.mjs mobile/scripts/ad-glass-hosts.test.mjs mobile/scripts/ad-glass-jest-gate.test.mjs
-          python3 -m py_compile mobile/scripts/ad-glass-sim/sinkhole.py mobile/scripts/ad-glass-sim/pick-simulator.py mobile/scripts/ad-glass-sim/sinkhole-hosts.py
-          bash -n mobile/scripts/ad-glass-sim/boot.sh
+          node --test mobile/scripts/sightline.test.mjs mobile/scripts/sightline-hosts.test.mjs mobile/scripts/sightline-jest-gate.test.mjs
+          python3 -m py_compile mobile/scripts/sightline-sim/sinkhole.py mobile/scripts/sightline-sim/pick-simulator.py mobile/scripts/sightline-sim/sinkhole-hosts.py
+          bash -n mobile/scripts/sightline-sim/boot.sh
           # (The ring fix and the Bluetooth SDK's start-up call to Mentra are
           # guarded, and the latter tested by running it, in the macOS job.)
           # The engine builds no cloud client when Core and Runtime are null.
@@ -102,7 +102,7 @@ jobs:
           # load here (they read Mentra firmware sources this repository does not
           # contain). The gate allows exactly those and nothing else.
           bun run test --json --outputFile="$RUNNER_TEMP/jest.json" || true
-          node scripts/ad-glass-jest-gate.mjs "$RUNNER_TEMP/jest.json" "$PWD"
+          node scripts/sightline-jest-gate.mjs "$RUNNER_TEMP/jest.json" "$PWD"
 
   simulator:
     name: Unsigned simulator build
@@ -115,15 +115,15 @@ jobs:
       SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # Homebrew is not used; keep it from auto-updating if a tool calls it.
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      # AD Glass has no backend (phase 2). These are canaries, not servers: if
+      # Sightline has no backend (phase 2). These are canaries, not servers: if
       # any code still read the build environment for a cloud address, the
       # canary would be compiled into the app, and "Verify the built app" fails
       # on finding one. The guards compare against these literals, never
       # against values read back from a file.
-      CLOUD_CORE: https://adglass-canary-core.invalid
-      CLOUD_RUNTIME: https://adglass-canary-runtime.invalid
-      CLOUD_MINIAPPS: https://adglass-canary-miniapps.invalid/
-      CLOUD_DIRECTORY: https://adglass-canary-directory.invalid/
+      CLOUD_CORE: https://sightline-canary-core.invalid
+      CLOUD_RUNTIME: https://sightline-canary-runtime.invalid
+      CLOUD_MINIAPPS: https://sightline-canary-miniapps.invalid/
+      CLOUD_DIRECTORY: https://sightline-canary-directory.invalid/
 
     steps:
       - name: Checkout
@@ -171,7 +171,7 @@ jobs:
           fail() { echo "::error::$1"; failed=1; }
           sdk=mobile/modules/bluetooth-sdk/ios/Source
 
-          node --test mobile/scripts/ad-glass.test.mjs || fail "The AD Glass config tests failed"
+          node --test mobile/scripts/sightline.test.mjs || fail "The Sightline config tests failed"
 
           # The R1 ring fix must survive every upstream merge until upstream has
           # it (their PR 4981): connectByName has to re-create the controller.
@@ -189,12 +189,12 @@ jobs:
             || fail "BluetoothSdkUpdateCheck no longer stops when the SDK's analytics are disabled"
 
           # One flag gates Mentra's Sentry and Firebase collection in the app.
-          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/adGlassManifest.ts \
-            || fail "adGlassManifest.ts no longer sets telemetry: false"
+          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/sightlineManifest.ts \
+            || fail "sightlineManifest.ts no longer sets telemetry: false"
 
-          # app.config.ts must still pass its config through the AD Glass step.
-          grep -q 'applyAdGlass(' mobile/app.config.ts \
-            || fail "mobile/app.config.ts no longer calls applyAdGlass"
+          # app.config.ts must still pass its config through the Sightline step.
+          grep -q 'applySightline(' mobile/app.config.ts \
+            || fail "mobile/app.config.ts no longer calls applySightline"
 
           exit "$failed"
 
@@ -302,14 +302,14 @@ jobs:
             echo "$1 = $actual"
             [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected the boolean $2"
           }
-          expect CFBundleDisplayName "AD Glass"
-          expect CFBundleName "AD Glass"
+          expect CFBundleDisplayName "Sightline"
+          expect CFBundleName "Sightline"
           expect_bool MentraBluetoothSdkAnalyticsDisabled true
           expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
-          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.adglass"?;' Mentra.xcodeproj/project.pbxproj \
-            || fail "The Xcode project does not use the bundle id com.domingueandco.adglass"
+          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.sightline"?;' Mentra.xcodeproj/project.pbxproj \
+            || fail "The Xcode project does not use the bundle id com.jpaulgay.sightline"
 
-          # Every permission prompt names AD Glass. "Mentra Live" is a model of
+          # Every permission prompt names Sightline. "Mentra Live" is a model of
           # glasses and may stay; $(PRODUCT_NAME) and the like would be shown as
           # "Mentra". perl exits 0 only when it ran and found nothing.
           prompts="$(plutil -p "$info" | grep 'UsageDescription" =>' || true)"
@@ -334,7 +334,7 @@ jobs:
           chmod +x scripts/setup-sherpa-onnx-optional.sh
           ./scripts/setup-sherpa-onnx-optional.sh
 
-      # No pod cache, on purpose (docs/ad-glass/spec-phase1.md, section 8): a
+      # No pod cache, on purpose (docs/sightline/spec-phase1.md, section 8): a
       # restored Pods folder is state the source no longer describes.
       - name: CocoaPods
         working-directory: mobile/ios
@@ -382,9 +382,9 @@ jobs:
             [ "$actual" = "$2" ] || fail "$1 is '$actual', expected the boolean $2"
           }
           # Identity: ours, not Mentra's.
-          expect CFBundleIdentifier "com.domingueandco.adglass"
-          expect CFBundleDisplayName "AD Glass"
-          expect CFBundleName "AD Glass"
+          expect CFBundleIdentifier "com.jpaulgay.sightline"
+          expect CFBundleDisplayName "Sightline"
+          expect CFBundleName "Sightline"
           # The native version and the version the JavaScript reports agree.
           expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
           echo "build $(plist CFBundleVersion)"
@@ -397,7 +397,7 @@ jobs:
             fail "A Firebase GoogleService-Info plist is in the app bundle"
           fi
 
-          # Every permission prompt names AD Glass ("Mentra Live" is a model of
+          # Every permission prompt names Sightline ("Mentra Live" is a model of
           # glasses and may stay).
           prompts="$(plutil -p "$app/Info.plist" | grep 'UsageDescription" =>' || true)"
           echo "$prompts"
@@ -406,11 +406,11 @@ jobs:
             fail "A permission prompt still names Mentra"
           fi
 
-          # URL scheme: adglass, and nothing of Mentra's.
+          # URL scheme: sightline, and nothing of Mentra's.
           schemes="$(plutil -extract CFBundleURLTypes json -o - "$app/Info.plist" 2>/dev/null \
             | python3 -c 'import json,sys; print(" ".join(s for t in json.load(sys.stdin) for s in t.get("CFBundleURLSchemes", [])))' || true)"
           echo "URL schemes: $schemes"
-          echo " $schemes " | grep -q " adglass " || fail "The adglass URL scheme is not registered"
+          echo " $schemes " | grep -q " sightline " || fail "The sightline URL scheme is not registered"
           if echo " $schemes " | grep -q -E " com\.mentra(\.[a-z.]+)? "; then
             fail "A Mentra URL scheme is still registered: $schemes"
           fi
@@ -422,9 +422,9 @@ jobs:
           bundle="$app/main.jsbundle"
           if [ -f "$bundle" ]; then
             ls -lh "$bundle"
-            grep -a -q -F "ad-glass-local" "$bundle" \
-              || fail "main.jsbundle does not contain the ad-glass-local deployment"
-            for canary in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY" "adglass-canary"; do
+            grep -a -q -F "sightline-local" "$bundle" \
+              || fail "main.jsbundle does not contain the sightline-local deployment"
+            for canary in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY" "sightline-canary"; do
               [ -n "$canary" ] || { fail "A canary address (CLOUD_*) is empty"; continue; }
               if grep -a -q -F "$canary" "$bundle"; then
                 fail "main.jsbundle contains $canary: something still reads a cloud address from the build environment"
@@ -447,7 +447,7 @@ jobs:
           elif grep -a -q -i -E "mentraglass\.(com|cn)|mentra\.glass" "$config"; then
             fail "The packaged Expo config names a Mentra host"
           fi
-          carriers="$(grep -r -a -l -F "adglass-canary" "$app" || true)"
+          carriers="$(grep -r -a -l -F "sightline-canary" "$app" || true)"
           if [ -n "$carriers" ]; then
             fail "A file in the app bundle contains a canary address: $(echo "$carriers" | tr '\n' ' ')"
           fi
@@ -456,14 +456,14 @@ jobs:
       - name: Package the built app for the boot job
         working-directory: mobile/ios/build-sim/Build/Products/Release-iphonesimulator
         run: |
-          tar -czf "$RUNNER_TEMP/ad-glass-simulator-app.tgz" Mentra.app
-          ls -lh "$RUNNER_TEMP/ad-glass-simulator-app.tgz"
+          tar -czf "$RUNNER_TEMP/sightline-simulator-app.tgz" Mentra.app
+          ls -lh "$RUNNER_TEMP/sightline-simulator-app.tgz"
 
       - name: Upload the built app
         uses: actions/upload-artifact@v4
         with:
-          name: ad-glass-simulator-app
-          path: ${{ runner.temp }}/ad-glass-simulator-app.tgz
+          name: sightline-simulator-app
+          path: ${{ runner.temp }}/sightline-simulator-app.tgz
           if-no-files-found: error
           retention-days: 5
           compression-level: 0
@@ -513,7 +513,7 @@ jobs:
       - name: Download the built app
         uses: actions/download-artifact@v4
         with:
-          name: ad-glass-simulator-app
+          name: sightline-simulator-app
           path: ${{ runner.temp }}/app
           run-id: ${{ inputs.app_run_id || github.run_id }}
           github-token: ${{ github.token }}
@@ -521,8 +521,8 @@ jobs:
       - name: Boot in a simulator with every Mentra hostname sinkholed
         run: |
           mkdir -p "$RUNNER_TEMP/app/unpacked" "$RUNNER_TEMP/evidence"
-          tar -xzf "$RUNNER_TEMP/app/ad-glass-simulator-app.tgz" -C "$RUNNER_TEMP/app/unpacked"
-          bash mobile/scripts/ad-glass-sim/boot.sh "$RUNNER_TEMP/app/unpacked/Mentra.app" "$RUNNER_TEMP/evidence"
+          tar -xzf "$RUNNER_TEMP/app/sightline-simulator-app.tgz" -C "$RUNNER_TEMP/app/unpacked"
+          bash mobile/scripts/sightline-sim/boot.sh "$RUNNER_TEMP/app/unpacked/Mentra.app" "$RUNNER_TEMP/evidence"
 
       - name: Summary
         if: always()
@@ -546,7 +546,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ad-glass-boot-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          name: sightline-boot-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: warn
           retention-days: 30

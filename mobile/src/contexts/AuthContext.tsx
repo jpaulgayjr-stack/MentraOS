@@ -114,7 +114,7 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
         })
     } else {
       let authSubscription: {unsubscribe: () => void} | undefined
-      // AD Glass: follow the deployment's telemetry policy here too (upstream
+      // Sightline: follow the deployment's telemetry policy here too (upstream
       // hard-codes true for Mentra's own deployment).
       const allowTelemetry = activeDeployment.manifest.telemetry
 
@@ -169,7 +169,7 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
   }
 
   const logout = async () => {
-    // AD Glass: the local user has nothing to sign out of and nowhere to sign
+    // Sightline: the local user has nothing to sign out of and nowhere to sign
     // back in. Wiping local data here would only lose the person's settings.
     if (activeDeployment.manifest.auth.mode === "local") return
     console.log("AuthContext: Starting logout process")

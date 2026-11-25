@@ -12,7 +12,7 @@ import {startMiniappOpenWait, useMiniappOpenWaitStore} from "@/stores/miniappOpe
 import {defaultMiniapps} from "./defaultMiniapps"
 import {shouldSkipMiniappInstall} from "./miniappVisibility"
 
-// AD Glass embeds a deployment with no servers; this suite is about one that has them.
+// Sightline embeds a deployment with no servers; this suite is about one that has them.
 jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
 jest.mock("@mentra/engine-host-internal", () => {
   class InstallMiniappError extends Error {

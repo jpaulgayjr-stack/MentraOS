@@ -21,7 +21,7 @@ function newProvider(deployment: WorkspaceDeployment): DeploymentAuthProvider {
     case "mentra-account":
       throw new Error("mentra-account workspace auth is not supported in deployment schema v1")
     case "local":
-      // AD Glass: the local user belongs to the embedded deployment only.
+      // Sightline: the local user belongs to the embedded deployment only.
       throw new Error("local auth is not a workspace sign-in")
   }
 }

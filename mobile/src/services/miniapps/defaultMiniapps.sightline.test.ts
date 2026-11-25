@@ -4,9 +4,9 @@ import {useDefaultMiniappsStore} from "@/stores/defaultMiniapps"
 
 import {defaultMiniapps} from "./defaultMiniapps"
 
-// AD Glass: there is no Core to ask for a default miniapp list and no Mentra host to install from, so nothing
+// Sightline: there is no Core to ask for a default miniapp list and no Mentra host to install from, so nothing
 // installs, nothing is fetched and Home never says it is waiting for a connection.
-// See docs/ad-glass/spec-phase2.md.
+// See docs/sightline/spec-phase2.md.
 
 jest.mock("@mentra/engine-host-internal", () => ({
   appRegistry: {getInstalledVersions: jest.fn(() => [])},

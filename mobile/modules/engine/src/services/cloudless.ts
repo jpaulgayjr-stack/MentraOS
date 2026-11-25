@@ -1,10 +1,10 @@
 /**
- * AD Glass: running with no cloud at all.
+ * Sightline: running with no cloud at all.
  *
  * A host that configures the engine with `coreUrl: null` and `runtimeUrl: null`
  * has no Core and no Runtime. The engine then builds no cloud client, so every
  * path that would reach either service fails locally, before any request.
- * See docs/ad-glass/spec-phase2.md.
+ * See docs/sightline/spec-phase2.md.
  */
 import type {SpeechProcessing} from "./TranscriptionRouting"
 

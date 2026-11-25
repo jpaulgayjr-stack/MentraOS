@@ -13,7 +13,7 @@ import {RouteButton} from "@/components/ui/RouteButton"
 import {Spacer} from "@/components/ui/Spacer"
 import {useAppTheme} from "@/contexts/ThemeContext"
 import {useNavigationStore} from "@/stores/navigation"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {deploymentStore} from "@/services/deployment/store"
 import {translate} from "@/i18n"
 import {SETTINGS, useSetting} from "@mentra/engine"
@@ -285,7 +285,7 @@ export default function DebugSettingsScreen() {
             />
           </Group>
 
-          {/* AD Glass: no servers to switch between, and the switcher's presets and health check are Mentra's. */}
+          {/* Sightline: no servers to switch between, and the switcher's presets and health check are Mentra's. */}
           {!isCloudless(deploymentStore.getActive().manifest) && (
             <Group title="Cloud V2 (core + runtime)">
               <CloudUrl />
@@ -293,7 +293,7 @@ export default function DebugSettingsScreen() {
           )}
 
           {/* Super mode only: a wrong OTA manifest can brick glasses */}
-          {/* AD Glass: not shown with no servers; its presets are Mentra's test manifests and Save fetches them. */}
+          {/* Sightline: not shown with no servers; its presets are Mentra's test manifests and Save fetches them. */}
           {superMode && !isCloudless(deploymentStore.getActive().manifest) && <OtaVersionUrl />}
 
           {superMode && <RouteButton label="Super Settings" onPress={() => push("/miniapps/settings/super")} />}

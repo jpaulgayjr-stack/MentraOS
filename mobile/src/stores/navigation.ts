@@ -3,7 +3,7 @@ import {create} from "zustand"
 import {router} from "expo-router"
 import {StackAnimationTypes} from "react-native-screens"
 
-// AD Glass: every navigation passes through here, so this is where the account screens are kept unreachable.
+// Sightline: every navigation passes through here, so this is where the account screens are kept unreachable.
 import {routeForThisBuild} from "@/services/deployment/localRoutes"
 
 export type NavigationAnimation = StackAnimationTypes | string

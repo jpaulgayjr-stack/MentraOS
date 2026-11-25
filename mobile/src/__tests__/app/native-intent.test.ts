@@ -65,7 +65,7 @@ it.each([
   expect(redirectSystemPath({path: link, initial: true})).toBe("/")
 })
 
-// AD Glass: there is no account, so no link may open a sign-in, callback or reset screen, whatever host it names.
+// Sightline: there is no account, so no link may open a sign-in, callback or reset screen, whatever host it names.
 // A warm app stays where it is and a cold one boots normally. (Upstream let these through to Expo Router.)
 it.each([
   "com.mentra://auth/callback?code=example",

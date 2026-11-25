@@ -6,8 +6,8 @@ import {createConsumerDeployment} from "@/services/deployment/officialManifest"
 import {LOCAL_SESSION_MARKER, LOCAL_USER_ID} from "@/utils/auth/localUser"
 import {fetchMinimumClientVersion} from "@/utils/cloudVersion"
 
-// AD Glass boot: straight to Home as the local user. No version check, no cached version floor, no sign-in, no
-// network. See docs/ad-glass/spec-phase2.md.
+// Sightline boot: straight to Home as the local user. No version check, no cached version floor, no sign-in, no
+// network. See docs/sightline/spec-phase2.md.
 
 const mockDeployment = createConsumerDeployment()
 const mockReplace = jest.fn()
@@ -83,8 +83,8 @@ beforeEach(async () => {
   mockPendingRoute = null
   mockMantleInit.mockResolvedValue(undefined)
   mockAuth = {
-    user: {id: LOCAL_USER_ID, name: "AD Glass", provider: "local"},
-    session: {token: LOCAL_SESSION_MARKER, user: {id: LOCAL_USER_ID, name: "AD Glass"}},
+    user: {id: LOCAL_USER_ID, name: "Sightline", provider: "local"},
+    session: {token: LOCAL_SESSION_MARKER, user: {id: LOCAL_USER_ID, name: "Sightline"}},
     loading: false,
   }
   global.fetch = fetchSpy as unknown as typeof fetch
@@ -142,7 +142,7 @@ it("waits for the local user before starting", async () => {
 })
 
 it("goes Home and then opens a link that was waiting", async () => {
-  mockPendingRoute = "adglass://open?url=https%3A%2F%2Fexample.com%2F"
+  mockPendingRoute = "sightline://open?url=https%3A%2F%2Fexample.com%2F"
   jest.useFakeTimers()
   try {
     render(<InitScreen />)
@@ -153,7 +153,7 @@ it("goes Home and then opens a link that was waiting", async () => {
     jest.useRealTimers()
   }
   expect(mockGoHome).toHaveBeenCalledTimes(1)
-  expect(mockProcessUrl).toHaveBeenCalledWith("adglass://open?url=https%3A%2F%2Fexample.com%2F", false, true)
+  expect(mockProcessUrl).toHaveBeenCalledWith("sightline://open?url=https%3A%2F%2Fexample.com%2F", false, true)
   expect(mockPendingRoute).toBeNull()
 })
 
@@ -162,7 +162,7 @@ it("says so when the engine cannot start, and starts on Try again", async () => 
   const errors = jest.spyOn(console, "error").mockImplementation(() => {})
   const screen = await boot()
   errors.mockRestore()
-  expect(screen.getByText("AD Glass could not start")).toBeTruthy()
+  expect(screen.getByText("Sightline could not start")).toBeTruthy()
   expect(screen.getByText("bluetooth module missing")).toBeTruthy()
   expect(mockGoHome).not.toHaveBeenCalled()
   expect(mockReplaceAll).not.toHaveBeenCalled()

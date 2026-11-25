@@ -1,8 +1,8 @@
-import {createAdGlassManifest, isCloudless} from "./adGlassManifest"
+import {createSightlineManifest, isCloudless} from "./sightlineManifest"
 import {createConsumerDeployment, createOfficialManifest} from "./officialManifest"
 
-// AD Glass: the embedded deployment has no server behind it, whatever the build environment says.
-// See docs/ad-glass/spec-phase2.md.
+// Sightline: the embedded deployment has no server behind it, whatever the build environment says.
+// See docs/sightline/spec-phase2.md.
 
 const CLOUD_ENV = [
   "EXPO_PUBLIC_CLOUD_CORE_URL",
@@ -24,12 +24,12 @@ it("has no Core and no Runtime", () => {
   const manifest = createOfficialManifest()
   expect(manifest.services).toEqual({coreUrl: null, runtimeUrl: null})
   expect(isCloudless(manifest)).toBe(true)
-  expect(manifest.deploymentId).toBe("ad-glass-local")
+  expect(manifest.deploymentId).toBe("sightline-local")
   expect(manifest.auth).toEqual({mode: "local"})
 })
 
 it("is the deployment the app embeds", () => {
-  expect(createConsumerDeployment()).toEqual({kind: "consumer", source: "embedded", manifest: createAdGlassManifest()})
+  expect(createConsumerDeployment()).toEqual({kind: "consumer", source: "embedded", manifest: createSightlineManifest()})
 })
 
 it("ignores every cloud URL in the build environment", () => {

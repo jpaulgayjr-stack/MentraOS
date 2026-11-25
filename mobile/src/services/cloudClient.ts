@@ -17,7 +17,7 @@ import {cloudClientService} from "@mentra/engine-host-internal"
 import {SETTINGS, engine} from "@mentra/engine"
 import {devServerHost} from "@/utils/cloudClient/devHost"
 import {deploymentStore, type ActiveDeployment} from "@/services/deployment"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {deploymentDebugScope, resolveDeploymentManifest} from "@/services/deployment/debugOverrides"
 
 type Lc3FrameSizeBytes = 20 | 40 | 60
@@ -112,7 +112,7 @@ export function deploymentCloudConfigValues(deployment: ActiveDeployment): Retur
     cloudAuthStorageKey: authStorageKey,
     // Preserve official legacy-glasses/embedded-engine OTA fallback semantics.
     otaManifestUrl: manifest.artifacts.mentraLiveOtaManifestUrl,
-    // AD Glass: with no servers, a null manifest URL means no firmware checks
+    // Sightline: with no servers, a null manifest URL means no firmware checks
     // at all, not Mentra's legacy public manifest.
     allowLegacyOtaFallback: deployment.kind === "consumer" && !isCloudless(manifest),
     firstPartyMiniappsUrl: manifest.artifacts.firstPartyMiniappsUrl ?? null,

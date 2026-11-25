@@ -1,23 +1,23 @@
 import type {DeploymentManifest} from "./types"
 
 /**
- * AD Glass: the one deployment this build knows, with no server behind it.
+ * Sightline: the one deployment this build knows, with no server behind it.
  *
  * Core and Runtime are null, every cloud feature is off, and nothing here reads
  * the build environment, so no `EXPO_PUBLIC_CLOUD_*` value can point the app at
- * a server. See docs/ad-glass/spec-phase2.md.
+ * a server. See docs/sightline/spec-phase2.md.
  */
 
-export const AD_GLASS_DEPLOYMENT_ID = "ad-glass-local"
+export const SIGHTLINE_DEPLOYMENT_ID = "sightline-local"
 
 /** The fork's own notice: what this build is, and that Mentra does not support it. */
-const FORK_NOTICE_URL = "https://github.com/jpaulgayjr-stack/MentraOS/blob/ad-glass/main/docs/ad-glass/NOTICE-fork.md"
+const FORK_NOTICE_URL = "https://github.com/jpaulgayjr-stack/MentraOS/blob/sightline/main/docs/sightline/NOTICE-fork.md"
 
-export function createAdGlassManifest(): DeploymentManifest {
+export function createSightlineManifest(): DeploymentManifest {
   return {
     schemaVersion: 1,
-    deploymentId: AD_GLASS_DEPLOYMENT_ID,
-    displayName: "AD Glass",
+    deploymentId: SIGHTLINE_DEPLOYMENT_ID,
+    displayName: "Sightline",
     services: {coreUrl: null, runtimeUrl: null},
     auth: {mode: "local"},
     artifacts: {

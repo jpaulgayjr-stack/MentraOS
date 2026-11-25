@@ -1,4 +1,4 @@
-// AD Glass: read the text in a screenshot with Apple's Vision framework.
+// Sightline: read the text in a screenshot with Apple's Vision framework.
 //
 //   swift ocr.swift screenshot.png
 //

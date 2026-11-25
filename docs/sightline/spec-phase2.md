@@ -1,18 +1,18 @@
-# AD Glass, phase 2a spec: cut the cord
+# Sightline, phase 2a spec: cut the cord
 
 Status: draft for review, 2026-11-25. Owner: Paul. Engineering: Claude.
-Branch: `ad-glass/phase2` on `jpaulgayjr-stack/MentraOS`. It was cut from `ad-glass/rebrand` before PR 1 merged; `ad-glass/main` (with PR 1 and PR 3) has since been merged into it, so the PR shows only this work.
+Branch: `sightline/phase2` on `jpaulgayjr-stack/MentraOS`. It was cut from `sightline/rebrand` before PR 1 merged; `sightline/main` (with PR 1 and PR 3) has since been merged into it, so the PR shows only this work.
 
 Everything stated about the code was read from this checkout unless it carries a confidence tag. Line numbers are as of the base commit `6adcee24b`.
 
 ## 1. Goal
 
-AD Glass opens straight to its home screen as a single local user, pairs the Even G2 glasses and the R1 ring, and runs AD Home, without ever contacting a server that Mentra owns.
+Sightline opens straight to its home screen as a single local user, pairs the Even G2 glasses and the R1 ring, and runs AD Home, without ever contacting a server that Mentra owns.
 
 "Done" for phase 2a:
 
 1. This spec is committed before code.
-2. The unsigned simulator build is green on `ad-glass/phase2`.
+2. The unsigned simulator build is green on `sightline/phase2`.
 3. On the GitHub runner, the built app boots in an iOS Simulator with every Mentra hostname in section 9 pointed at a sinkhole, reaches the home screen with no login, and the sinkhole records zero connection attempts. Screenshot and log are attached to the run.
 4. A draft PR is open inside the fork and has had a fresh-context adversarial review.
 5. Paul has the on-device checklist (section 10): Bluetooth cannot be exercised in a simulator.
@@ -23,23 +23,23 @@ All Claude-decided under the 2026-10-19 delegation unless marked.
 
 | Topic | Decision | Why |
 |---|---|---|
-| Identity | One local user, id `local:adglass`, no email, no password, no account screens. Provided by a new `LocalAuthProvider` behind the existing `mentraAuth` seam (`src/utils/auth/authClient.ts`). | Every consumer of auth (boot, deep links, engine storage partition, per-account settings) already goes through that seam, so one new provider replaces the whole Mentra account client with no fake server. |
+| Identity | One local user, id `local:sightline`, no email, no password, no account screens. Provided by a new `LocalAuthProvider` behind the existing `mentraAuth` seam (`src/utils/auth/authClient.ts`). | Every consumer of auth (boot, deep links, engine storage partition, per-account settings) already goes through that seam, so one new provider replaces the whole Mentra account client with no fake server. |
 | Session token | The local session carries the constant `local-device` as its token. It is a marker, not a credential: there is no server to present it to. | Three upstream gates test `session.token` for truthiness (`index.tsx:159`, `DeeplinkContext.tsx:564-574`, `backgroundRecovery.ts:32`). A constant keeps those files unedited. |
-| Deployment | The embedded manifest becomes `ad-glass-local`: `services.coreUrl` and `runtimeUrl` are `null`, `auth.mode` is the new `"local"`, every cloud feature flag is `false`, `telemetry` is `false`. It reads no environment variable. | The manifest type already allows null services. Hard-coding beats configuration: a stray `EXPO_PUBLIC_CLOUD_CORE_URL` in a build environment cannot bring the cloud back. |
+| Deployment | The embedded manifest becomes `sightline-local`: `services.coreUrl` and `runtimeUrl` are `null`, `auth.mode` is the new `"local"`, every cloud feature flag is `false`, `telemetry` is `false`. It reads no environment variable. | The manifest type already allows null services. Hard-coding beats configuration: a stray `EXPO_PUBLIC_CLOUD_CORE_URL` in a build environment cannot bring the cloud back. |
 | "Cloudless" test | One predicate, `isCloudless(manifest)`: both service URLs are null. Host and engine each have a copy of this one-line rule. | The engine is a separate package and must not import app code. |
 | Fresh install | The deployment store starts resolved. There is no "Mentra or organization" chooser and no organization (Microsoft Entra) path. | `index.tsx:357` sends an unresolved install to `/auth/start`. |
 | Debug URL overrides | Ignored while the manifest is cloudless, and never counted as "this changes Core". | A saved dev override (`cloud_core_url` setting) would otherwise repoint the app at a server, and the debug URL screen would start a sign-out. |
-| Account screens | Two layers. Every navigation to `/auth/*` is sent to the boot route, in the navigation store (all in-app navigation goes through it) and in the system link handler. And a layout that wraps every screen in `src/app/auth/` leaves for the boot route as soon as it renders. | The sign-in, password and organization screens stay in the bundle until phase 2b, and several upstream paths still navigate to them (the link fallback, Mentra Live pairing). Recognising paths is not enough on its own: review found spellings (`adglass:auth/start`, dot segments) that the router resolves to a sign-in screen and a path check misses. The layout cannot be spelled around. |
+| Account screens | Two layers. Every navigation to `/auth/*` is sent to the boot route, in the navigation store (all in-app navigation goes through it) and in the system link handler. And a layout that wraps every screen in `src/app/auth/` leaves for the boot route as soon as it renders. | The sign-in, password and organization screens stay in the bundle until phase 2b, and several upstream paths still navigate to them (the link fallback, Mentra Live pairing). Recognising paths is not enough on its own: review found spellings (`sightline:auth/start`, dot segments) that the router resolves to a sign-in screen and a path check misses. The layout cannot be spelled around. |
 | Boot | `index.tsx` skips the version check, the cached version floor and the token exchange; it starts the engine and goes to home. The first-run "welcome" carousel is skipped: home already shows the "Pair glasses" card. | Task requirement: boot straight to home. |
 | Engine with no cloud | `CloudClientService.construct()` returns without building a client when the config is cloudless. `hasCore()` is then false, which already gates support-profile sync, fleet, crash reports and the core-token push to the glasses (`engine.ts:119-146`). | Today `engine.start()` throws at `engine.ts:80` with no Runtime, so nothing starts. One guard at the single place a client is built covers every lazy caller. |
-| Storage identity | The host passes `auth.getUserId = () => "local:adglass"` and no `getSubjectToken`. | `resolveMentraUserId()` (`CloudClientService.ts:762`) uses the host id first. Without it a miniapp's storage calls fail with `NOT_CONNECTED`, which would break AD Home's notes. |
+| Storage identity | The host passes `auth.getUserId = () => "local:sightline"` and no `getSubjectToken`. | `resolveMentraUserId()` (`CloudClientService.ts:762`) uses the host id first. Without it a miniapp's storage calls fail with `NOT_CONNECTED`, which would break AD Home's notes. |
 | Speech to text | With cloud speech off and on-device speech on, a `preferCloud` listener (the default) is accepted instead of refused, and is served on-device like `preferLocal` and `localOnly`. | Upstream refuses it ("Cloud speech is disabled by this deployment", `LocalMiniappRuntime.ts:292`). The router picks the cloud only while the cloud counts as connected, and that needs both the `cloudSpeech` flag and a live session (`cloudSpeechUp()`), neither of which exists here. The listener keeps its own `processing` value because older miniapp SDKs sort delivered events by it. |
 | Text to speech | A speak request is treated as `localOnly` where cloud speech is off, so it goes on-device or fails cleanly with `TTS_LOCAL_UNAVAILABLE`. | `localOnly` is the one branch of the speak path with no cloud call in it (`LocalMiniappRuntime.ts:3009-3016`). |
 | System miniapps | Keep the screens compiled into the app: Settings, Gallery, Mirror, Notifications, Miniapp Developer. Hide Feedback (it only files reports with Mentra). Install none of the twelve downloaded ones (AI, Call, Captions, Notes, Navigation and others): `miniapps.defaults` is empty and `firstPartyMiniappsUrl` is null. | The five kept ones are routes in the binary (`BuiltInMiniappCatalog.ts:205-333`); nothing is downloaded for them. Seven of the twelve downloads have no source in this repo, and a G2 user needs none of them to run AD Home. |
-| AD Home install | **Scan the release QR from Paul's laptop**, exactly as he installs it today: `scripts\release.cmd` in the AD Home repo, then AD Glass > Settings > Miniapp Developer > Scan. It installs as a local build and keeps running without the laptop. | See section 6. |
+| AD Home install | **Scan the release QR from Paul's laptop**, exactly as he installs it today: `scripts\release.cmd` in the AD Home repo, then Sightline > Settings > Miniapp Developer > Scan. It installs as a local build and keeps running without the laptop. | See section 6. |
 | Ring pairing entry | "Pair controller" in Settings is shown always, not only in super mode. | It is the only route to `/pairing/select-controller` (`DeviceSettingsSection.tsx:294`), and the ring fix is the reason this fork exists. |
-| URL scheme | `adglass`. Applied in `scripts/ad-glass.cjs`; the code reads `APP_SCHEME` instead of the literal `com.mentra`. | Mentra sign-in no longer returns through the scheme, and AD Glass must not answer links meant for the Mentra app installed on the same phone. |
-| Bluetooth SDK update check | Already stopped on `ad-glass/main` (PR 1): the SDK's start-up call to `core.mentraglass.com` does not run when the SDK's analytics are off, which AD Glass always sets (`MentraBluetoothSdkAnalyticsDisabled`). Swift tests for it run in the workflow, and the built app's Info.plist is checked for the key. | This branch first added a separate opt-in key for the same call. It was removed when `ad-glass/main` was merged in: one mechanism, the one that is tested by running it. |
+| URL scheme | `sightline`. Applied in `scripts/sightline.cjs`; the code reads `APP_SCHEME` instead of the literal `com.mentra`. | Mentra sign-in no longer returns through the scheme, and Sightline must not answer links meant for the Mentra app installed on the same phone. |
+| Bluetooth SDK update check | Already stopped on `sightline/main` (PR 1): the SDK's start-up call to `core.mentraglass.com` does not run when the SDK's analytics are off, which Sightline always sets (`MentraBluetoothSdkAnalyticsDisabled`). Swift tests for it run in the workflow, and the built app's Info.plist is checked for the key. | This branch first added a separate opt-in key for the same call. It was removed when `sightline/main` was merged in: one mechanism, the one that is tested by running it. |
 | Firmware updates | `mentraLiveOtaManifestUrl` is null and the legacy fallback is off. | OTA code serves Mentra Live and AR99 hardware. The G2 has `hasOta` false and never reaches it. |
 | Links, wallpapers, store | Privacy and terms links point at the fork notice in this repository. Wallpaper list is empty. App Store and review links are null (`appUpdates.mode: "managed"`). | They were Mentra URLs. The manifest type requires a URL for the two legal links. |
 
@@ -51,7 +51,7 @@ Rejected alternatives:
 
 ## 3. Inputs
 
-- Base: `ad-glass/rebrand` (`6adcee24b`): upstream `dev` + ring fix + ONNX fix + rebrand.
+- Base: `sightline/rebrand` (`6adcee24b`): upstream `dev` + ring fix + ONNX fix + rebrand.
 - `spec-phase1.md` section 10 (the host and cloud-call inventory) is the checklist; section 8 of this file maps each row to what now happens.
 - No secrets, no Apple account, no new service.
 
@@ -61,22 +61,22 @@ Rejected alternatives:
 
 | File | What |
 |---|---|
-| `mobile/src/services/deployment/adGlassManifest.ts` | The `ad-glass-local` manifest and `isCloudless()` |
+| `mobile/src/services/deployment/sightlineManifest.ts` | The `sightline-local` manifest and `isCloudless()` |
 | `mobile/src/services/deployment/localRoutes.ts` | `routeForThisBuild()`: account routes become the boot route |
 | `mobile/src/app/auth/_layout.tsx` | Wraps every account screen and redirects to the boot route. Upstream has no layout in this folder, so the file cannot conflict |
 | `mobile/src/utils/auth/localUser.ts`, `mobile/src/utils/auth/provider/localClient.ts` | The local user's id and session marker; `LocalAuthProvider` |
 | `mobile/modules/engine/src/services/cloudless.ts` | Engine side: `isCloudlessConfig()` and the speech refusal rule |
-| `mobile/scripts/ad-glass-blocked-hosts.txt`, `ad-glass-hosts.test.mjs` | The hostnames the simulator job sinkholes, and the test that keeps the list complete |
-| `mobile/scripts/ad-glass-sim/` (`boot.sh`, `sinkhole.py`, `ocr.swift`, `pick-simulator.py`, `sinkhole-hosts.py`) | Simulator boot proof (section 7) |
+| `mobile/scripts/sightline-blocked-hosts.txt`, `sightline-hosts.test.mjs` | The hostnames the simulator job sinkholes, and the test that keeps the list complete |
+| `mobile/scripts/sightline-sim/` (`boot.sh`, `sinkhole.py`, `ocr.swift`, `pick-simulator.py`, `sinkhole-hosts.py`) | Simulator boot proof (section 7) |
 | `mobile/src/test-utils/mentraCloudManifest.ts` | Test fixture only: upstream's Mentra manifest, for the upstream suites that are about a deployment with servers |
-| `mobile/scripts/ad-glass-jest-gate.mjs` (+ test) | The verdict on a jest run: everything must pass except two upstream suites that cannot load in this repository |
-| Tests: `adGlassManifest.test.ts`, `adGlassLocal.test.ts`, `localClient.test.ts`, `ad-glass-boot.test.tsx`, `navigation.adglass.test.ts`, `defaultMiniapps.adglass.test.ts`, and in the engine `cloudless.test.ts`, `CloudClientService.cloudless.test.ts`, `LocalMiniappRuntime.speech.cloudless.test.ts` | See section 7 |
+| `mobile/scripts/sightline-jest-gate.mjs` (+ test) | The verdict on a jest run: everything must pass except two upstream suites that cannot load in this repository |
+| Tests: `sightlineManifest.test.ts`, `sightlineLocal.test.ts`, `localClient.test.ts`, `sightline-boot.test.tsx`, `navigation.sightline.test.ts`, `defaultMiniapps.sightline.test.ts`, and in the engine `cloudless.test.ts`, `CloudClientService.cloudless.test.ts`, `LocalMiniappRuntime.speech.cloudless.test.ts` | See section 7 |
 
 ### Upstream files edited (each edit is a few lines unless noted)
 
 | File | Edit |
 |---|---|
-| `mobile/src/services/deployment/officialManifest.ts` | Rewritten: `createOfficialManifest()` returns the AD Glass manifest; no environment reads remain. On a merge conflict, keep ours |
+| `mobile/src/services/deployment/officialManifest.ts` | Rewritten: `createOfficialManifest()` returns the Sightline manifest; no environment reads remain. On a merge conflict, keep ours |
 | `mobile/src/services/deployment/types.ts` | Add `{mode: "local"}` to the auth union |
 | `mobile/src/services/deployment/auth/createDeploymentAuthProvider.ts` | The new mode in its `switch` (throws: it is not an organization sign-in) |
 | `mobile/src/services/deployment/store.ts` | Start resolved on the embedded local deployment; ignore any persisted organization selection |
@@ -97,12 +97,12 @@ Rejected alternatives:
 | `mobile/modules/engine/src/services/LocalMiniappRuntime.ts` | The speech refusal rule comes from `cloudless.ts`; one line in `handleSpeak` makes every speak request `localOnly` where cloud speech is off (written inline, with names the engine's source-extraction tests already inject) |
 | `mobile/src/app/miniapps/settings/debug.tsx` | The Cloud URL switcher and the firmware URL switcher are not shown when cloudless (their presets are Mentra's servers, and saving fetches them) |
 | `mobile/src/services/miniapps/miniappInstallFlow.ts` | A package link says there is no directory instead of opening Mentra's directory website |
-| `mobile/scripts/ad-glass.cjs`, `ad-glass.d.cts`, `ad-glass.test.mjs` | Scheme `adglass`, enforced both when the config is built and again while the native project is generated; no Core address in the packaged config |
-| `.github/workflows/ad-glass-ios-simulator.yml` | Three jobs: tests, simulator build with no-backend guards, boot with hosts sinkholed |
+| `mobile/scripts/sightline.cjs`, `sightline.d.cts`, `sightline.test.mjs` | Scheme `sightline`, enforced both when the config is built and again while the native project is generated; no Core address in the packaged config |
+| `.github/workflows/sightline-ios-simulator.yml` | Three jobs: tests, simulator build with no-backend guards, boot with hosts sinkholed |
 
 Upstream tests touched:
 
-- Removed, because the behaviour they covered is gone and new tests cover its replacement: `officialManifest.test.ts` (environment-driven Core URL; see `adGlassManifest.test.ts`) and `__tests__/app/version-reset.test.tsx` (boot version check; see `ad-glass-boot.test.tsx`).
+- Removed, because the behaviour they covered is gone and new tests cover its replacement: `officialManifest.test.ts` (environment-driven Core URL; see `sightlineManifest.test.ts`) and `__tests__/app/version-reset.test.tsx` (boot version check; see `sightline-boot.test.tsx`).
 - Given the cloud fixture with one added `jest.mock` line, nothing else changed: `configuration.test.ts`, `deployment.test.ts`, `deploymentManagedMiniappSync.test.ts`, `defaultMiniapps.test.ts`, `components/dev/CloudUrl.test.tsx`.
 - `__tests__/app/native-intent.test.ts`: two expectations changed. Links to account screens used to pass through to the router; now they boot normally.
 - `MantleManager.test.ts`: one test added (the engine hand-off).
@@ -113,7 +113,7 @@ Not touched: `mobile/modules/bluetooth-sdk/ios/Source/sgcs/G2.swift`, the pairin
 
 1. `_layout.tsx` loads settings and mounts providers (unchanged). Sentry stays uninitialized (empty DSN, telemetry false).
 2. `DeploymentStore` constructs with the embedded local manifest, already resolved.
-3. `AuthProvider` asks `mentraAuth.getSession()`. The lazy client sees `auth.mode === "local"` and builds `LocalAuthProvider`, which answers from memory: user `local:adglass`, token marker `local-device`. `openAccountSettings("local:adglass")` opens that user's settings store. `accountClient.ts` (the client for Mentra's account service) is never constructed.
+3. `AuthProvider` asks `mentraAuth.getSession()`. The lazy client sees `auth.mode === "local"` and builds `LocalAuthProvider`, which answers from memory: user `local:sightline`, token marker `local-device`. `openAccountSettings("local:sightline")` opens that user's settings store. `accountClient.ts` (the client for Mentra's account service) is never constructed.
 4. `index.tsx` waits for auth and navigation, then on a cloudless deployment runs `mantle.init()` and navigates. `index.tsx` itself makes no network call.
 5. `MantleManager.initialize()` configures the engine with `auth: {getUserId}` and the cloudless config. `engine.start()` skips the cloud client, the audio uplink (flags off), and every `hasCore()` service; Bluetooth, device events, settings sync, the local miniapp runtime and the display processor start as before.
 6. `MantleManager` starts the on-device speech model downloads in the background (`offlineSpeechModelService.startBackgroundDownloads()`, unchanged from upstream): on a first launch the speech-to-text, text-to-speech and wake-word models are fetched from `github.com/k2-fsa/sherpa-onnx` and `huggingface.co`, on whatever connection the phone has, mobile data included. These are not Mentra's servers. See the edge cases.
@@ -151,40 +151,40 @@ A miniapp whose age rating is above the app's own cannot launch: the gate needs 
 
 ### Unit tests (run locally and in the workflow)
 
-- `adGlassManifest.test.ts`: services null, flags false, telemetry false, no `mentraglass` or `mentra.glass` string anywhere in the manifest, and the same result whatever `EXPO_PUBLIC_CLOUD_*` says.
+- `sightlineManifest.test.ts`: services null, flags false, telemetry false, no `mentraglass` or `mentra.glass` string anywhere in the manifest, and the same result whatever `EXPO_PUBLIC_CLOUD_*` says.
 - `localClient.test.ts`: session, user and subscription behaviour; every account operation and `getSubjectToken` reject; no `fetch` is called.
-- `adGlassLocal.test.ts`: the store is resolved on first run and ignores a stored organization; a saved override does not change null services; what the engine is configured with; the account-route rule.
-- `ad-glass-boot.test.tsx`: `index.tsx` starts the engine and goes Home with no version call, no request of its own, no cached floor and no welcome carousel; a start failure shows a message and a retry. The engine start is mocked in this test: what the engine does without a cloud is covered by the engine tests and the simulator job.
-- `navigation.adglass.test.ts`: push, replace, replaceAll and navigate to an account route all land on the boot route.
-- `auth/ad-glass-account-screens.test.tsx`: the layout around the account screens redirects to the boot route and renders none of them.
-- `defaultMiniapps.adglass.test.ts`: nothing fetched, nothing installed, not "waiting".
+- `sightlineLocal.test.ts`: the store is resolved on first run and ignores a stored organization; a saved override does not change null services; what the engine is configured with; the account-route rule.
+- `sightline-boot.test.tsx`: `index.tsx` starts the engine and goes Home with no version call, no request of its own, no cached floor and no welcome carousel; a start failure shows a message and a retry. The engine start is mocked in this test: what the engine does without a cloud is covered by the engine tests and the simulator job.
+- `navigation.sightline.test.ts`: push, replace, replaceAll and navigate to an account route all land on the boot route.
+- `auth/sightline-account-screens.test.tsx`: the layout around the account screens redirects to the boot route and renders none of them.
+- `defaultMiniapps.sightline.test.ts`: nothing fetched, nothing installed, not "waiting".
 - Engine (`bun test`, the whole engine suite runs in the workflow): a cloudless config builds no client on init or reconnect, every cloud call fails locally, storage identity comes from the host; the speech refusal table; routing stays on-device; the real speak handler never asks the cloud where cloud speech is off.
-- `ad-glass.test.mjs`: scheme is `adglass` in `scheme` and `CFBundleURLTypes`, in both Info.plist passes; a leftover Mentra scheme fails the build; no Core address in the packaged config.
-- `ad-glass-hosts.test.mjs`: every `*.mentraglass.com`, `*.mentraglass.cn` and `mentra.glass` hostname written in the app's sources (`mobile/src`, `mobile/modules`, `mobile/plugins`, `mobile/scripts`, the three `cloud-v2` packages the app uses) is in the blocked-hosts list, so a host that upstream adds later fails the build until it is triaged. A second check fails if a Mentra domain appears as a bare suffix, which is how a hostname assembled at run time would look; none exists today.
-- `ad-glass-jest-gate.mjs`: the app's jest suite must pass in full, except two upstream suites that read Mentra firmware sources (`asg_client/`) this repository does not contain and so cannot load.
+- `sightline.test.mjs`: scheme is `sightline` in `scheme` and `CFBundleURLTypes`, in both Info.plist passes; a leftover Mentra scheme fails the build; no Core address in the packaged config.
+- `sightline-hosts.test.mjs`: every `*.mentraglass.com`, `*.mentraglass.cn` and `mentra.glass` hostname written in the app's sources (`mobile/src`, `mobile/modules`, `mobile/plugins`, `mobile/scripts`, the three `cloud-v2` packages the app uses) is in the blocked-hosts list, so a host that upstream adds later fails the build until it is triaged. A second check fails if a Mentra domain appears as a bare suffix, which is how a hostname assembled at run time would look; none exists today.
+- `sightline-jest-gate.mjs`: the app's jest suite must pass in full, except two upstream suites that read Mentra firmware sources (`asg_client/`) this repository does not contain and so cannot load.
 
 ### Static guards on the built app (workflow)
 
-- The job builds with canary values in `EXPO_PUBLIC_CLOUD_CORE_URL`, `EXPO_PUBLIC_CLOUD_RUNTIME_URL`, `EXPO_PUBLIC_MINIAPPS_URL` and `EXPO_PUBLIC_DIRECTORY_URL`, then fails if any canary string is in `main.jsbundle` or in the packaged Expo config. This is the "packaged manifest has a non-null Core or Runtime" guard: the manifest is code, so the proof is that nothing in the bundle read those variables. The deployment id `ad-glass-local` must be present.
-- `Info.plist`: URL schemes contain `adglass` and not `com.mentra`; the phase 1 checks stay (identity, prompts, `MentraBluetoothSdkAnalyticsDisabled`, Firebase off, no Sentry DSN).
+- The job builds with canary values in `EXPO_PUBLIC_CLOUD_CORE_URL`, `EXPO_PUBLIC_CLOUD_RUNTIME_URL`, `EXPO_PUBLIC_MINIAPPS_URL` and `EXPO_PUBLIC_DIRECTORY_URL`, then fails if any canary string is in `main.jsbundle` or in the packaged Expo config. This is the "packaged manifest has a non-null Core or Runtime" guard: the manifest is code, so the proof is that nothing in the bundle read those variables. The deployment id `sightline-local` must be present.
+- `Info.plist`: URL schemes contain `sightline` and not `com.mentra`; the phase 1 checks stay (identity, prompts, `MentraBluetoothSdkAnalyticsDisabled`, Firebase off, no Sentry DSN).
 - Source greps: the ring fix, the SDK start-up guard, `telemetry: false` in the embedded manifest, and the engine's no-cloud guard are still in place (they must survive upstream merges).
 
 ### Simulator boot with Mentra blocked (workflow)
 
-`mobile/scripts/ad-glass-sim/boot.sh`, run by the `boot` job:
+`mobile/scripts/sightline-sim/boot.sh`, run by the `boot` job:
 
-1. Append every hostname in `ad-glass-blocked-hosts.txt` to the runner's `/etc/hosts`, pointing at `127.0.0.1` and `::1`, and flush the DNS cache.
+1. Append every hostname in `sightline-blocked-hosts.txt` to the runner's `/etc/hosts`, pointing at `127.0.0.1` and `::1`, and flush the DNS cache.
 2. Start a sinkhole on ports 80 and 443 that accepts, logs (with the hostname the client asked for) and closes every connection.
 3. Self-tests, so an empty log means something: a request from the Mac and one from the simulator's own browser must each show up in the sinkhole log. The log is then cleared.
 4. Boot a simulator, install the built app, launch it, take screenshots at intervals for 75 seconds.
 5. Pass conditions:
    - the app process is still running;
    - text recognition (Apple's Vision framework, already on the runner) finds the home screen's "Pair glasses" text and no sign-in, update or error wording;
-   - iOS offers to open an `adglass://` link in AD Glass, and does not accept a `com.mentra://` link;
+   - iOS offers to open an `sightline://` link in Sightline, and does not accept a `com.mentra://` link;
    - no crash report;
    - the sinkhole log is empty once the app has been stopped, and the sinkhole still records a test request on both ports afterwards;
    - iOS's own network log for the app names every host it looked up, and none is Mentra's or an analytics service's. This look does not depend on the blocked list. On the first run the only hosts were `github.com` and `release-assets.githubusercontent.com` (the three speech models).
-   - Links to account screens: iOS asks "Open in AD Glass?" before handing over a link opened from outside the app. The script answers by pressing Return in the Simulator window, then checks that six spellings of an account link each end on Home with no sign-in wording. If the confirmation cannot be answered on the build machine, those lines are reported as NOT CHECKED rather than passed, and the route guards rest on their unit tests.
+   - Links to account screens: iOS asks "Open in Sightline?" before handing over a link opened from outside the app. The script answers by pressing Return in the Simulator window, then checks that six spellings of an account link each end on Home with no sign-in wording. If the confirmation cannot be answered on the build machine, those lines are reported as NOT CHECKED rather than passed, and the route guards rest on their unit tests.
 6. Screenshots, recognized text, the app's open sockets and the sinkhole log are uploaded as artifacts and summarised on the run page.
 
 The sinkhole is used instead of an unroutable address because it proves more: an unroutable address only shows the app survives a failed call, the sinkhole shows no call was attempted.
@@ -218,36 +218,36 @@ Bluetooth does not exist in the simulator. Pairing, reconnection, the display, t
 
 ## 9. Hostnames blocked in the simulator job
 
-Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authoritative and the hosts test keeps it complete. It includes Core and Runtime for production, staging and dev in every region found in the source, `core.mentraglass.com`, `miniapps*.mentraglass.com`, `api.apps*.mentraglass.com`, `apps.mentraglass.com`, `apps.mentra.glass`, `ota.mentraglass.com`, `mtkfirmware.mentraglass.com`, `artifactscdn.mentraglass.com`, `mentra-wallpapers.mentraglass.com`, `mentra-videos-cdn.mentraglass.com`, `asset.mentraglass.cn`, `mentraglass.com`, `docs.mentraglass.com`, `api.mentra.glass`, plus PostHog (`us.i.posthog.com`) and Sentry ingest as a second line behind the phase 1 switches.
+Kept in `mobile/scripts/sightline-blocked-hosts.txt`; the list there is authoritative and the hosts test keeps it complete. It includes Core and Runtime for production, staging and dev in every region found in the source, `core.mentraglass.com`, `miniapps*.mentraglass.com`, `api.apps*.mentraglass.com`, `apps.mentraglass.com`, `apps.mentra.glass`, `ota.mentraglass.com`, `mtkfirmware.mentraglass.com`, `artifactscdn.mentraglass.com`, `mentra-wallpapers.mentraglass.com`, `mentra-videos-cdn.mentraglass.com`, `asset.mentraglass.cn`, `mentraglass.com`, `docs.mentraglass.com`, `api.mentra.glass`, plus PostHog (`us.i.posthog.com`) and Sentry ingest as a second line behind the phase 1 switches.
 
 ## 10. On-device checklist for Paul (first TestFlight build)
 
-1. Put the phone in airplane mode with Wi-Fi off. Open AD Glass. It opens to the home screen with a "Pair glasses" card and never shows a sign-in screen.
-2. Turn Wi-Fi back on. Tap Pair glasses, choose Even Realities G2, follow the steps. The glasses connect and show the AD Glass idle screen.
+1. Put the phone in airplane mode with Wi-Fi off. Open Sightline. It opens to the home screen with a "Pair glasses" card and never shows a sign-in screen.
+2. Turn Wi-Fi back on. Tap Pair glasses, choose Even Realities G2, follow the steps. The glasses connect and show the Sightline idle screen.
 3. Settings > Pair controller > R1. The ring pairs and a ring press does something on the glasses.
 4. Force-quit the app, reopen it. Glasses and ring reconnect on their own.
-5. On the laptop run `scripts\release.cmd` in the AD Home folder. In AD Glass: Settings > Miniapp Developer > Scan, scan the QR. AD Home installs and opens.
+5. On the laptop run `scripts\release.cmd` in the AD Home folder. In Sightline: Settings > Miniapp Developer > Scan, scan the QR. AD Home installs and opens.
 6. Turn the laptop off. AD Home still opens and shows time, weather and calendar on the glasses.
 7. Say a voice note in AD Home. It is transcribed. (The speech models start downloading from GitHub the first time the app opens, so do the first launch on Wi-Fi and give it a few minutes before this step.)
 8. Add a note, force-quit, reopen: the note is still there.
 9. Use the share button on a note: the iOS share sheet opens.
 10. Leave it running for a day with the Mentra app deleted from the phone.
-11. Optional, one minute: in Safari's address bar type `adglass://auth/start` and tap Open. AD Glass comes to the front on its home screen, not on a sign-in page.
+11. Optional, one minute: in Safari's address bar type `sightline://auth/start` and tap Open. Sightline comes to the front on its home screen, not on a sign-in page.
 
 ## 11. Edge cases
 
 - **Mentra's store app on the same phone.** Different bundle id, different URL scheme, separate storage. Both will fight for the glasses' Bluetooth connection: delete the store app or keep it closed.
 - **Upgrade from a phase 1 build.** None exists on any phone, so there is no stored Mentra session or deployment selection to migrate. The store still ignores a persisted workspace selection defensively.
 - **A saved cloud URL override or OTA override in settings.** Ignored on a cloudless manifest. The OTA override was already inert outside super mode.
-- **A package link (`apps.mentraglass.com/package/...`) scanned or opened in AD Glass.** There is no directory to look it up in, so the app says so. Upstream would open Mentra's directory website in an in-app browser; this build does not.
-- **Odd spellings of a link to an account screen** (`adglass:auth/start`, `adglass:///auth/start`, `adglass://./auth/start`, `//auth/start`, encoded or upper-case segments). The path check reads through them, and whatever it misses is stopped by the layout around the screens.
+- **A package link (`apps.mentraglass.com/package/...`) scanned or opened in Sightline.** There is no directory to look it up in, so the app says so. Upstream would open Mentra's directory website in an in-app browser; this build does not.
+- **Odd spellings of a link to an account screen** (`sightline:auth/start`, `sightline:///auth/start`, `sightline://./auth/start`, `//auth/start`, encoded or upper-case segments). The path check reads through them, and whatever it misses is stopped by the layout around the screens.
 - **Speech models download at first launch, on any connection.** Upstream starts the on-device model downloads in the background as soon as the engine starts, with no Wi-Fi-only rule, from GitHub and Hugging Face. On a first launch over mobile data that is a few hundred megabytes (estimate; moderate confidence) without asking. Not changed here; bundling the English model or adding a Wi-Fi rule is a follow-up.
 - **Speech model not downloaded and no network.** Transcription reports `downloading` or `unavailable`; text to speech fails with `TTS_LOCAL_UNAVAILABLE`. Neither tries a cloud path.
 - **Transcription in a language other than the one picked on the Speech page.** With no cloud to fall back to, a listener that asks for a specific other language (say `transcription:fr-FR` while the phone's model is English) is accepted but receives nothing; the model status a miniapp can subscribe to says `unavailable` and names the picked language. Upstream behaves the same whenever its cloud is unreachable. A listener that asks for no language (what AD Home does: `transcription.on(handler, {processing: "preferLocal"})`) or for the picked language is served.
 - **Debug settings.** The Cloud URL switcher and, in super mode, the firmware URL switcher are hidden. Both offer Mentra addresses as presets and fetch the address on Save.
 - **A miniapp that asks for `preferCloud`.** Served on-device.
 - **Logout.** There is no row for it. If a stale route calls it, it does nothing: wiping local data with no account to return to would only lose Paul's settings.
-- **Anything that navigates to a sign-in screen** (an unmatched deep link, an `adglass://auth/...` link, upstream code that still calls for one) lands on the boot route, which goes Home.
+- **Anything that navigates to a sign-in screen** (an unmatched deep link, an `sightline://auth/...` link, upstream code that still calls for one) lands on the boot route, which goes Home.
 - **Background recovery (iOS relaunching the app after a Bluetooth event).** `backgroundRecovery.ts` needs a resolved deployment and a session token; both are satisfied locally.
 - **Upstream merges.** About two dozen upstream files carry small edits (section 4). Conflicts in `officialManifest.ts` resolve as "keep ours". The guards in section 7 fail the build if a merge silently restores a cloud path.
 
@@ -269,15 +269,15 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 
 | What went wrong | Rollback |
 |---|---|
-| The phase 2 build misbehaves on the phone | Delete AD Glass, reinstall the Mentra store app, sign in. Glasses and ring pair with either. AD Home reinstalls there by the same QR |
+| The phase 2 build misbehaves on the phone | Delete Sightline, reinstall the Mentra store app, sign in. Glasses and ring pair with either. AD Home reinstalls there by the same QR |
 | A commit on the branch is wrong | `git revert` it; the workflow rebuilds |
-| The whole approach is wrong | Close the PR. `ad-glass/main` is untouched until it merges |
+| The whole approach is wrong | Close the PR. `sightline/main` is untouched until it merges |
 
 ## 15. Phase 2b follow-ups (not in this change)
 
 1. Remove the Mapbox, Firebase, Sentry, Azure Communication, LiveKit and WebRTC packages and the Entra (MSAL) module, and with them the dead auth screens and `accountClient.ts`.
 2. Reword Mentra text and logos on the screens that survive (splash, settings, pairing copy).
-3. Signed archive and TestFlight workflow (needs Paul's Apple enrolment and the four `ADGLASS_*` secrets).
+3. Signed archive and TestFlight workflow (needs Paul's Apple enrolment and the four `SIGHTLINE_*` secrets).
 4. AD Home on its own HTTPS address under `domingueandco.com` (option B), which gives it self-update and a publisher identity. Needs a DNS record from Paul.
 5. Bundle the English speech model in the app, or make the model downloads Wi-Fi only, so a first launch does not pull models over mobile data.
 6. Android.

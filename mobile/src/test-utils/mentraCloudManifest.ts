@@ -1,7 +1,7 @@
 /**
  * Test fixture: Mentra's own cloud deployment, as upstream's `officialManifest.ts` builds it.
  *
- * AD Glass embeds a deployment with no servers (`adGlassManifest.ts`), but upstream modules that are still in the
+ * Sightline embeds a deployment with no servers (`sightlineManifest.ts`), but upstream modules that are still in the
  * tree (the cloud URL switcher, the Core-served default miniapp list) have tests written against a deployment that
  * has them. Those suites swap this in for `@/services/deployment/officialManifest`:
  *

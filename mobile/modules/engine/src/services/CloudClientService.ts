@@ -551,7 +551,7 @@ function stopLc3FrameSizeWatcher(): void {
 }
 
 function construct(): void {
-  // AD Glass: a deployment with neither Core nor Runtime has no cloud client, whatever a reconnect pin or a host
+  // Sightline: a deployment with neither Core nor Runtime has no cloud client, whatever a reconnect pin or a host
   // resolver says. Every caller already treats a missing client as "not connected", so nothing that needs the cloud
   // gets as far as a request. This is the one place a client is built.
   if (isCloudlessConfig(getConfigValues())) return

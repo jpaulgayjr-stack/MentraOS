@@ -43,7 +43,7 @@ function isResetPasswordLink(path: string): boolean {
  * (the install sheet opens over it), and a cold app completes its normal boot first.
  */
 export function redirectSystemPath({path, initial}: {path: string; initial: boolean}): string | null {
-  // AD Glass: a link to an account screen (sign-in, password reset, ...) boots normally instead.
+  // Sightline: a link to an account screen (sign-in, password reset, ...) boots normally instead.
   if (routeForThisBuild(systemRoute(path)) !== systemRoute(path)) return initial ? "/" : null
   if (isResetPasswordLink(path)) return initial ? "/" : null
   if (isMiniappInstallLinkPath(path)) return initial ? "/" : null

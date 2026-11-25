@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""AD Glass: a sinkhole for the hostnames the app must never contact.
+"""Sightline: a sinkhole for the hostnames the app must never contact.
 
-The simulator job points every hostname in ../ad-glass-blocked-hosts.txt at
+The simulator job points every hostname in ../sightline-blocked-hosts.txt at
 127.0.0.1 and ::1 and runs this on ports 80 and 443. Each connection is accepted, read
 once, logged as one JSON line (with the hostname the client asked for: the TLS
 server name, or the HTTP Host header) and closed. Nothing is ever answered.
 
     sudo python3 sinkhole.py --log /tmp/sinkhole.jsonl [--port 80 --port 443]
 
-See docs/ad-glass/spec-phase2.md.
+See docs/sightline/spec-phase2.md.
 """
 import argparse
 import json

@@ -445,7 +445,7 @@ class MantleManager {
     // startup, not an island configuration seam.
     const deployment = deploymentStore.getActive()
     const workspaceAuth = deployment.kind === "workspace" ? createDeploymentAuthProvider(deployment) : null
-    // AD Glass: the local user has an identity (miniapp storage is kept under
+    // Sightline: the local user has an identity (miniapp storage is kept under
     // it) and nothing to exchange for a token. No subject token, no auth events.
     const localAuth = deployment.manifest.auth.mode === "local" ? {getUserId: async () => LOCAL_USER_ID} : null
     engine.configure({

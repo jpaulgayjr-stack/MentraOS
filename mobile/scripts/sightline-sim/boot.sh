@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# AD Glass: boot the built app in an iOS Simulator with every Mentra hostname
+# Sightline: boot the built app in an iOS Simulator with every Mentra hostname
 # sinkholed, and prove it reaches Home with no sign-in and contacts none of them.
 #
-#   mobile/scripts/ad-glass-sim/boot.sh <path to Mentra.app> <evidence dir>
+#   mobile/scripts/sightline-sim/boot.sh <path to Mentra.app> <evidence dir>
 #
 # Runs on a macOS GitHub runner (needs sudo for /etc/hosts and ports 80/443).
 # Writes screenshots, the text read from them, the sinkhole log and a
 # summary into the evidence directory. Exits non-zero if any check fails.
-# See docs/ad-glass/spec-phase2.md, section 7.
+# See docs/sightline/spec-phase2.md, section 7.
 set -euo pipefail
 
 APP="${1:?path to the built .app}"
 OUT="${2:?evidence directory}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HOSTS_FILE="$HERE/../ad-glass-blocked-hosts.txt"
-BUNDLE_ID="com.domingueandco.adglass"
-SCHEME="adglass"
-SETTLE_SECONDS="${ADGLASS_SETTLE_SECONDS:-75}"
+HOSTS_FILE="$HERE/../sightline-blocked-hosts.txt"
+BUNDLE_ID="com.jpaulgay.sightline"
+SCHEME="sightline"
+SETTLE_SECONDS="${SIGHTLINE_SETTLE_SECONDS:-75}"
 # Words that only the sign-in, sign-up, update and start-error screens show.
 # Whole words only, so "designing" or "catalog in" do not count as "sign in" or "log in".
 UNWANTED="(^|[^a-z])(sign up with email|continue with (google|apple)|log ?in|sign ?in|create account|password|update required|connection error|could not start)([^a-z]|\$)"
@@ -40,7 +40,7 @@ fail() {
 sink_has() { grep -q "\"host\": \"$1\"" "$SINK_LOG" 2>/dev/null; }
 sink_reset() { : > "$SINK_LOG"; }
 
-note "# AD Glass simulator boot with Mentra hosts sinkholed"
+note "# Sightline simulator boot with Mentra hosts sinkholed"
 note ""
 if [ ! -d "$APP" ]; then
   fail "the app bundle $APP does not exist"
@@ -57,7 +57,7 @@ blocked="$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$HOSTS_FILE" | grep . | sort 
 count="$(echo "$blocked" | wc -l | tr -d ' ')"
 {
   echo ""
-  echo "# AD Glass sinkhole (ad-glass-sim/boot.sh)"
+  echo "# Sightline sinkhole (sightline-sim/boot.sh)"
   for host in $blocked; do
     echo "127.0.0.1 $host"
     echo "::1 $host"
@@ -65,7 +65,7 @@ count="$(echo "$blocked" | wc -l | tr -d ' ')"
 } | sudo tee -a /etc/hosts > /dev/null
 sudo dscacheutil -flushcache || true
 sudo killall -HUP mDNSResponder || true
-note "Blocked hostnames: $count (from \`mobile/scripts/ad-glass-blocked-hosts.txt\`)"
+note "Blocked hostnames: $count (from \`mobile/scripts/sightline-blocked-hosts.txt\`)"
 
 sudo python3 "$HERE/sinkhole.py" --log "$SINK_LOG" > "$OUT/sinkhole.stdout" 2>&1 &
 for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -84,8 +84,8 @@ if [ "$resolved" = "127.0.0.1" ]; then
 else
   fail "core.mentraglass.com resolves to '${resolved:-nothing}', not the sinkhole"
 fi
-curl -sk --max-time 5 https://core.mentraglass.com/adglass-selftest > /dev/null 2>&1 || true
-curl -s --max-time 5 http://ota.mentraglass.com/adglass-selftest > /dev/null 2>&1 || true
+curl -sk --max-time 5 https://core.mentraglass.com/sightline-selftest > /dev/null 2>&1 || true
+curl -s --max-time 5 http://ota.mentraglass.com/sightline-selftest > /dev/null 2>&1 || true
 sleep 2
 if sink_has core.mentraglass.com && sink_has ota.mentraglass.com; then
   pass "the sinkhole records an HTTPS and an HTTP attempt made from the build machine (self-test)"
@@ -109,7 +109,7 @@ shot() { # name
 
 # The simulator uses the Mac's resolver. Prove it: have the simulator's own
 # browser open a blocked address and find the attempt in the sinkhole.
-xcrun simctl openurl "$udid" "https://core.mentraglass.com/adglass-selftest-from-simulator" || true
+xcrun simctl openurl "$udid" "https://core.mentraglass.com/sightline-selftest-from-simulator" || true
 for _ in $(seq 1 30); do
   if sink_has core.mentraglass.com; then break; fi
   sleep 2
@@ -124,7 +124,7 @@ sleep 5
 cp "$SINK_LOG" "$OUT/sinkhole-selftest-simulator.jsonl"
 sink_reset
 
-# ── 3. Install and launch AD Glass ──────────────────────────────────────────
+# ── 3. Install and launch Sightline ──────────────────────────────────────────
 xcrun simctl install "$udid" "$APP"
 # Pre-answer the permission prompts simctl can answer, so they do not cover Home.
 xcrun simctl privacy "$udid" grant all "$BUNDLE_ID" > /dev/null 2>&1 || true
@@ -182,7 +182,7 @@ fi
 # ── 4. Links ────────────────────────────────────────────────────────────────
 # iOS knows the app's scheme, and a link to an account screen does not open one.
 #
-# iOS asks 'Open in "AD Glass"?' before it hands over a link opened from outside the app. That question is the
+# iOS asks 'Open in "Sightline"?' before it hands over a link opened from outside the app. That question is the
 # proof the scheme is registered to this app. To get the link delivered, something has to answer it: the script
 # presses Return in the Simulator window (the alert's default button is Open). Where that is not possible on the
 # build machine, the link checks are reported as NOT CHECKED, not as passed: the route guards then rest on their
@@ -209,10 +209,10 @@ for link in "${SCHEME}://auth/start" "${SCHEME}:auth/start" "${SCHEME}:///auth/s
   sleep 3
   shot "$name-prompt" || true
   if [ "$link_number" -eq 1 ]; then
-    if asks_to_open "$name-prompt" && grep -qi 'AD Glass' "$OUT/$name-prompt.txt"; then
-      pass "iOS offers to open ${SCHEME}:// links in AD Glass (the scheme is registered to this app)"
+    if asks_to_open "$name-prompt" && grep -qi 'Sightline' "$OUT/$name-prompt.txt"; then
+      pass "iOS offers to open ${SCHEME}:// links in Sightline (the scheme is registered to this app)"
     elif asks_to_open "$name-prompt"; then
-      fail "iOS offers to open ${SCHEME}:// links, but not in AD Glass (see $name-prompt.png)"
+      fail "iOS offers to open ${SCHEME}:// links, but not in Sightline (see $name-prompt.png)"
     else
       pass "iOS accepts ${SCHEME}:// links (no confirmation was shown)"
     fi
@@ -271,8 +271,8 @@ else
   fail "$attempts connection(s) reached blocked hostnames while the app ran: $(python3 "$HERE/sinkhole-hosts.py" "$SINK_LOG")"
 fi
 # An empty log only counts if the sinkhole was still listening at the end, on both ports.
-curl -sk --max-time 5 https://runtime.mentraglass.com/adglass-selftest-after > /dev/null 2>&1 || true
-curl -s --max-time 5 http://miniapps.mentraglass.com/adglass-selftest-after > /dev/null 2>&1 || true
+curl -sk --max-time 5 https://runtime.mentraglass.com/sightline-selftest-after > /dev/null 2>&1 || true
+curl -s --max-time 5 http://miniapps.mentraglass.com/sightline-selftest-after > /dev/null 2>&1 || true
 sleep 2
 if sink_has runtime.mentraglass.com && sink_has miniapps.mentraglass.com; then
   pass "the sinkhole was still recording on both ports after the app ran (self-test)"
@@ -300,7 +300,7 @@ else
 fi
 
 reports="$HOME/Library/Logs/DiagnosticReports"
-ls "$reports" 2> /dev/null | grep -i -E "mentra|adglass" > "$OUT/crash-reports.txt" || true
+ls "$reports" 2> /dev/null | grep -i -E "mentra|sightline" > "$OUT/crash-reports.txt" || true
 if [ -s "$OUT/crash-reports.txt" ]; then
   fail "crash reports were written: $(tr '\n' ' ' < "$OUT/crash-reports.txt")"
   while read -r report; do cp "$reports/$report" "$OUT/" 2> /dev/null || true; done < "$OUT/crash-reports.txt"

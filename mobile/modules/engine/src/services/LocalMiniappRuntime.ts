@@ -2825,7 +2825,7 @@ class LocalMiniappRuntime {
 
       const modelId = typeof payload.model_id === "string" ? payload.model_id : undefined
       // `processing` wins; SDKs before it send only `forceLocal`.
-      // AD Glass: where cloud speech is off the request is on-device only, the one branch below with no cloud call.
+      // Sightline: where cloud speech is off the request is on-device only, the one branch below with no cloud call.
       const processing = isFeatureEnabled("cloudSpeech") ? readSpeechProcessing(payload) : "localOnly"
       const cloudConnected = cloudClientService.isConnected()
       console.log(

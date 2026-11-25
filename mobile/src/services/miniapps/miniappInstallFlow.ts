@@ -25,7 +25,7 @@ import {confirmMiniappInstall} from "@/components/miniapps/MiniappInstallSheet"
 import {showAlert, waitForAlertHost} from "@/contexts/ModalContext"
 import {translate} from "@/i18n"
 import {deploymentStore} from "@/services/deployment"
-import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {useNavigationStore} from "@/stores/navigation"
 import {blockUpdatingMiniapp} from "@/utils/miniappUpdatingAlert"
 import {askPermissionsUI} from "@/utils/PermissionsUtils"
@@ -73,7 +73,7 @@ export async function startMiniappInstallFromLink(
 
 /**
  * Install the listed miniapp a package link names: the directory says which URL serves it. Without a directory (a
- * deployment that names none), the package's page opens in the browser; AD Glass, which has no servers, says there
+ * deployment that names none), the package's page opens in the browser; Sightline, which has no servers, says there
  * is no directory instead.
  */
 export async function startListedMiniappInstall(
@@ -84,7 +84,7 @@ export async function startListedMiniappInstall(
   const directoryUrl = deploymentStore.getActive().manifest.artifacts.directoryUrl
   if (!directoryUrl) {
     options.onPresent?.()
-    // AD Glass: there is no directory, and the fallback below opens Mentra's website. Say so instead.
+    // Sightline: there is no directory, and the fallback below opens Mentra's website. Say so instead.
     if (isCloudless(deploymentStore.getActive().manifest)) {
       await waitForAlertHost()
       await showAlert({

@@ -12,12 +12,12 @@ import type {
 import {LOCAL_SESSION_MARKER, LOCAL_USER_ID} from "@/utils/auth/localUser"
 
 /**
- * AD Glass: the person holding the phone is the only user. Nothing here talks
+ * Sightline: the person holding the phone is the only user. Nothing here talks
  * to a server; there is no account to sign in to, change or delete.
- * See docs/ad-glass/spec-phase2.md.
+ * See docs/sightline/spec-phase2.md.
  */
 
-const LOCAL_USER: MentraAuthUser = Object.freeze({id: LOCAL_USER_ID, name: "AD Glass", provider: "local"})
+const LOCAL_USER: MentraAuthUser = Object.freeze({id: LOCAL_USER_ID, name: "Sightline", provider: "local"})
 
 function localSession(): MentraAuthSession {
   return {token: LOCAL_SESSION_MARKER, user: {...LOCAL_USER}}
@@ -25,7 +25,7 @@ function localSession(): MentraAuthSession {
 
 /** Every account operation: there is no account service to perform it. */
 function noAccountService<T>(operation: string): AsyncResult<T, Error> {
-  return Res.error_async(new Error(`AD Glass has no account service (${operation})`))
+  return Res.error_async(new Error(`Sightline has no account service (${operation})`))
 }
 
 function nothingToDo(): AsyncResult<void, Error> {
