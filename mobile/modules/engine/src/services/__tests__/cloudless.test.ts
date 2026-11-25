@@ -1,6 +1,6 @@
 import {describe, expect, test} from "bun:test"
 
-import {isCloudlessConfig, speechProcessingRefusal, speechProcessingWithoutCloud} from "../cloudless"
+import {isCloudlessConfig, speechProcessingRefusal} from "../cloudless"
 import {needsLocal, targetSource, type SpeechProcessing} from "../TranscriptionRouting"
 
 describe("a cloudless engine config", () => {
@@ -65,15 +65,5 @@ describe("the other speech deployments keep upstream's answers", () => {
     expect(speechProcessingRefusal("preferLocal", {cloud: false, onDevice: false})).toBe(
       "Cloud and on-device speech are disabled by this deployment",
     )
-  })
-})
-
-describe("speaking where cloud speech is off", () => {
-  test.each(ALL)("a %s request is on-device only", (requested) => {
-    expect(speechProcessingWithoutCloud(requested, false)).toBe("localOnly")
-  })
-
-  test.each(ALL)("a %s request is left alone where cloud speech is on", (requested) => {
-    expect(speechProcessingWithoutCloud(requested, true)).toBe(requested)
   })
 })

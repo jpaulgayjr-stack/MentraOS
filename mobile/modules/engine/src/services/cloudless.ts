@@ -34,12 +34,3 @@ export function speechProcessingRefusal(
   }
   return null
 }
-
-/**
- * What a speak request gets where cloud speech is off: `localOnly`, the one
- * processing whose text-to-speech path has no cloud branch at all. Where cloud
- * speech is on, the request is left alone.
- */
-export function speechProcessingWithoutCloud(requested: SpeechProcessing, cloudSpeech: boolean): SpeechProcessing {
-  return cloudSpeech ? requested : "localOnly"
-}
