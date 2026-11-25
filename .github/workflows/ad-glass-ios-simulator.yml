@@ -1,0 +1,164 @@
+# AD Glass: prove the iOS toolchain on GitHub's free hosted macOS runner.
+#
+# Builds the phone app for the iOS Simulator, unsigned. No Apple account, no
+# secrets, no Mentra-owned runner. This is the phase 1 "can we build it at all"
+# gate (docs/ad-glass/spec-phase1.md). The signed archive and TestFlight upload
+# live in a separate workflow that is added once the Apple team exists.
+#
+# Deliberately independent of Mentra's own workflows: those need their
+# self-hosted Mac, their match-certs repo and their Doppler / R2 secrets.
+name: AD Glass iOS simulator build
+
+on:
+  push:
+    branches:
+      - "ad-glass/**"
+    paths:
+      - "mobile/**"
+      - "cloud-v2/packages/cloud-client/**"
+      - "cloud-v2/packages/protocol/**"
+      - "cloud-v2/packages/workspace-contract/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/ad-glass-ios-simulator.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ad-glass-ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Unsigned simulator build
+    runs-on: macos-15
+    timeout-minutes: 150
+    env:
+      # Mentra's Sentry build phase would try to upload symbols to their org.
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+      # Homebrew is not used; keep it from auto-updating if a tool calls it.
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      BUILD_LOG: ${{ runner.temp }}/xcodebuild.log
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          # Mentra builds with Xcode 26.2. Prefer it, then the newest 26.x on
+          # the image, then whatever the image defaults to.
+          pick=""
+          if [ -d /Applications/Xcode_26.2.app ]; then
+            pick=/Applications/Xcode_26.2.app
+          else
+            pick="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1 || true)"
+          fi
+          if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i simulator || true
+          df -h /
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Tool versions
+        run: |
+          bun --version
+          node --version
+          ruby --version
+          pod --version
+
+      - name: Environment file
+        working-directory: mobile
+        run: |
+          # .env.example carries only public placeholders: a dummy Mapbox token
+          # and Mentra's dev endpoints. Nothing secret is needed to compile.
+          cp .env.example .env
+          # Xcode script phases (the JS bundler) inherit this job's environment.
+          grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' .env >> "$GITHUB_ENV"
+
+      - name: Install JavaScript dependencies
+        working-directory: mobile
+        run: |
+          # mobile's preinstall script is run with zx before node_modules exists.
+          bun add -g zx
+          bun install --no-frozen-lockfile
+
+      - name: Expo prebuild (generate the Xcode project)
+        working-directory: mobile
+        run: |
+          rm -rf ios
+          bun expo prebuild --platform ios
+
+      - name: Sherpa on-device speech framework
+        working-directory: mobile
+        run: |
+          chmod +x scripts/setup-sherpa-onnx-optional.sh
+          ./scripts/setup-sherpa-onnx-optional.sh
+
+      - name: CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+
+      - name: Build for the iOS Simulator (unsigned)
+        working-directory: mobile/ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -workspace Mentra.xcworkspace \
+            -scheme Mentra \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY= \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$BUILD_LOG" \
+            | grep --line-buffered -E "error:|fatal error|BUILD SUCCEEDED|BUILD FAILED|\*\* |^note: Run script|Resolved source packages|^CompileSwiftSources|^Ld .*Mentra\.app" || true
+          # grep's exit status is not the build's: read the verdict from the log.
+          grep -q "BUILD SUCCEEDED" "$BUILD_LOG"
+
+      - name: Verify the built app
+        working-directory: mobile/ios
+        run: |
+          app="build-sim/Build/Products/Release-iphonesimulator/Mentra.app"
+          test -d "$app"
+          du -sh "$app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Info.plist"
+          test -f "$app/main.jsbundle"
+          ls -lh "$app/main.jsbundle"
+
+      - name: Show the end of the build log on failure
+        if: failure()
+        run: |
+          if [ -f "$BUILD_LOG" ]; then
+            grep -n -E "error:|fatal error" "$BUILD_LOG" | head -100 || true
+            tail -150 "$BUILD_LOG"
+          fi
+
+      - name: Upload the full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 7
