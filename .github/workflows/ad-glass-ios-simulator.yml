@@ -81,12 +81,30 @@ jobs:
           ruby --version
           pod --version
 
+      - name: Fork guards (config tests, ring fix)
+        run: |
+          node --test mobile/scripts/ad-glass.test.mjs
+          # The R1 ring fix must survive every upstream merge until upstream has
+          # it (their PR 4981): connectByName has to re-create the controller.
+          grep -B4 'controller?.connectById(name)' mobile/modules/bluetooth-sdk/ios/Source/DeviceManager.swift             | grep -q 'initController(pendingWearable)'             || { echo "::error::The R1 ring fix is missing from DeviceManager.connectByName"; exit 1; }
+
       - name: Environment file
         working-directory: mobile
+        env:
+          # Phase 1 still signs in to Mentra's cloud, so use the environment the
+          # store app uses. The repository default is their dev cloud.
+          CLOUD_CORE: https://core.us-west-2.mentraglass.com
+          CLOUD_RUNTIME: https://runtime.us-west-2.mentraglass.com
+          CLOUD_MINIAPPS: https://miniapps.mentraglass.com/
+          CLOUD_DIRECTORY: https://api.apps.mentraglass.com/
         run: |
-          # .env.example carries only public placeholders: a dummy Mapbox token
-          # and Mentra's dev endpoints. Nothing secret is needed to compile.
+          # .env.example carries only public placeholders (a dummy Mapbox token,
+          # an empty Sentry DSN). Nothing secret is needed to compile.
           cp .env.example .env
+          sed -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|"               -e "s|^EXPO_PUBLIC_CLOUD_CORE_URL=.*|EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE|"               -e "s|^EXPO_PUBLIC_CLOUD_RUNTIME_URL=.*|EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME|"               -e "s|^EXPO_PUBLIC_MINIAPPS_URL=.*|EXPO_PUBLIC_MINIAPPS_URL=$CLOUD_MINIAPPS|"               -e "s|^EXPO_PUBLIC_DIRECTORY_URL=.*|EXPO_PUBLIC_DIRECTORY_URL=$CLOUD_DIRECTORY|"               .env > .env.tmp && mv .env.tmp .env
+          # No crash reporting to anyone: the DSN must stay empty.
+          grep -q '^EXPO_PUBLIC_SENTRY_DSN=$' .env
+          grep -q "^EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE\$" .env
           # Xcode script phases (the JS bundler) inherit this job's environment.
           grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' .env >> "$GITHUB_ENV"
 
@@ -140,11 +158,31 @@ jobs:
           app="build-sim/Build/Products/Release-iphonesimulator/Mentra.app"
           test -d "$app"
           du -sh "$app"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Info.plist"
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist"; }
+          expect() { # name, actual, wanted
+            echo "$1 = $2"
+            [ "$2" = "$3" ] || { echo "::error::$1 is '$2', expected '$3'"; exit 1; }
+          }
+          # Identity: ours, not Mentra's.
+          expect CFBundleIdentifier "$(plist CFBundleIdentifier)" "com.domingueandco.adglass"
+          expect CFBundleDisplayName "$(plist CFBundleDisplayName)" "AD Glass"
+          expect CFBundleName "$(plist CFBundleName)" "AD Glass"
+          echo "version $(plist CFBundleShortVersionString) build $(plist CFBundleVersion)"
+          # Telemetry: the Bluetooth SDK's PostHog analytics are off, and no
+          # Firebase project file ships in the app.
+          expect MentraBluetoothSdkAnalyticsDisabled "$(plist MentraBluetoothSdkAnalyticsDisabled)" "true"
+          if find "$app" -name 'GoogleService-Info*.plist' | grep -q .; then
+            echo "::error::A Firebase GoogleService-Info plist is in the app bundle"; exit 1
+          fi
+          if plist NSMicrophoneUsageDescription | grep -q "Mentra App"; then
+            echo "::error::Permission prompts still name the Mentra App"; exit 1
+          fi
+          # Backend: the JavaScript bundle carries the endpoints this job pinned.
           test -f "$app/main.jsbundle"
           ls -lh "$app/main.jsbundle"
+          for url in "$EXPO_PUBLIC_CLOUD_CORE_URL" "$EXPO_PUBLIC_CLOUD_RUNTIME_URL"; do
+            grep -a -q -F "$url" "$app/main.jsbundle"               || { echo "::error::main.jsbundle does not contain $url"; exit 1; }
+          done
 
       - name: Show the end of the build log on failure
         if: failure()
