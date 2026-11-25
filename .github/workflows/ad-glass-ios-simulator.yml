@@ -40,7 +40,6 @@ jobs:
       SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # Homebrew is not used; keep it from auto-updating if a tool calls it.
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      BUILD_LOG: ${{ runner.temp }}/xcodebuild.log
 
     steps:
       - name: Checkout
@@ -50,6 +49,7 @@ jobs:
 
       - name: Select Xcode
         run: |
+          echo "BUILD_LOG=$RUNNER_TEMP/xcodebuild.log" >> "$GITHUB_ENV"
           ls -d /Applications/Xcode*.app
           # Mentra builds with Xcode 26.2. Prefer it, then the newest 26.x on
           # the image, then whatever the image defaults to.
