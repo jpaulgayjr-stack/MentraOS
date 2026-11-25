@@ -37,7 +37,7 @@ Phase 1 does not remove Mentra's login or cloud. It proves we can build, sign an
 
 ## 3. Inputs
 
-- Source: upstream `dev` plus the ring fix branch `fix/ios-r1-pair-connect-by-name` (merged as `22b649c29`). The fix adds `initController` to `DeviceManager.connectByName` on iOS (upstream PR 4981).
+- Source: upstream `dev` plus the ring fix branch `fix/ios-r1-pair-connect-by-name` (merged as `22b649c29`). The fix (upstream PR 4981, three commits, five added lines in `DeviceManager.swift`) adds `initController` to `connectByName` on iOS so the ring actually connects, sets `searchingController` there as `connectDefaultController()` does, and clears that flag in `handleControllerReady()` so the home ring card does not show a stale search after the ring connects. Known gap, Low, not ours to fix while we are iOS-only: Android's `connectByName` controller branch (`DeviceManager.kt`) does not set the flag.
 - Toolchain on the runner (`macos-15`): Xcode 26.2 (what Mentra uses), Bun 1.4.0, Node 20, CocoaPods from the image, Ruby from the image.
 - From Paul, after Apple enrolment (section 9): Team ID, App Store Connect API key (Key ID, Issuer ID, `.p8` file contents), stored as GitHub Actions secrets that he pastes himself.
 - No Mapbox token, no Sentry DSN, no Doppler, no fastlane match repository.

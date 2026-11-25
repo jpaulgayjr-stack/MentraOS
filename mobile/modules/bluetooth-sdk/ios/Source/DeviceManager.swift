@@ -1182,6 +1182,7 @@ struct ViewState {
         pendingController = ""
         defaultController = controller.type
         searching = false
+        searchingController = false
 
         // save the default_controller now that we're connected:
         Bridge.saveSetting("default_controller", defaultController)
@@ -1999,6 +2000,7 @@ struct ViewState {
             // Sightline (upstream PR 4981): controller can be nil here: during R1 pairing, disconnectController() runs
             // just before this call and clears it. Re-create it (as connectDevice does) so connectById is not a no-op.
             initController(pendingWearable)
+            searchingController = true
             controller?.connectById(name)
             return
         }
