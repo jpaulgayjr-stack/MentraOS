@@ -150,4 +150,53 @@ final class BluetoothSdkUpdateCheckTests: XCTestCase {
         BluetoothSdkUpdateCheck.awaitIdle()
         XCTAssertTrue(notices.values.isEmpty)
     }
+
+    // AD Glass: the fork's change to start(). An app that disables the SDK's analytics in its
+    // Info.plist sends no update check. The second test is the control: the same kind of bundle
+    // without the switch still sends one, so the first cannot pass for an unrelated reason.
+
+    private func temporaryBundle(analyticsDisabled: Bool) throws -> Bundle {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("adglass-update-check-\(UUID().uuidString).bundle", isDirectory: true)
+        #if os(macOS)
+            let infoDirectory = root.appendingPathComponent("Contents", isDirectory: true)
+        #else
+            let infoDirectory = root
+        #endif
+        try FileManager.default.createDirectory(at: infoDirectory, withIntermediateDirectories: true)
+        let info: [String: Any] = [
+            "CFBundleIdentifier": "test.adglass.update-check",
+            "MentraBluetoothSdkAnalyticsDisabled": analyticsDisabled,
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: infoDirectory.appendingPathComponent("Info.plist"))
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let bundle = try XCTUnwrap(Bundle(url: root))
+        XCTAssertEqual(bundle.object(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled") as? Bool, analyticsDisabled)
+        return bundle
+    }
+
+    private func updateChecksSent(by bundle: Bundle) -> Int {
+        let calls = Recorder<Bool>()
+        let check = BluetoothSdkUpdateCheck(
+            surface: "ios",
+            sdkVersion: "3.1.0",
+            bundle: bundle,
+            transport: { _, completion in
+                calls.append(true)
+                completion(nil)
+            }
+        ) { _, _ in }
+        check.start()
+        BluetoothSdkUpdateCheck.awaitIdle()
+        return calls.values.count
+    }
+
+    func testAppThatDisablesSdkAnalyticsSendsNoUpdateCheck() throws {
+        XCTAssertEqual(updateChecksSent(by: try temporaryBundle(analyticsDisabled: true)), 0)
+    }
+
+    func testAppThatKeepsSdkAnalyticsStillSendsTheUpdateCheck() throws {
+        XCTAssertEqual(updateChecksSent(by: try temporaryBundle(analyticsDisabled: false)), 1)
+    }
 }
