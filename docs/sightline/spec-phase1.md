@@ -45,7 +45,7 @@ Phase 1 does not remove Mentra's login or cloud. It proves we can build, sign an
 ## 4. Outputs
 
 1. `.github/workflows/sightline-ios-simulator.yml`: unsigned Release build for the iOS Simulator on every push to `sightline/**` that touches the app. Exists now.
-2. `.github/workflows/sightline-ios-testflight.yml`: signed archive and upload. Written after the secrets exist (section 7).
+2. `.github/workflows/sightline-ios-testflight.yml`: signed archive and upload. Written, never run: it needs the Apple team and secrets (section 7.2).
 3. Rebrand commit(s) on `sightline/main` (section 5).
 4. An App Store Connect app record and TestFlight builds, visible only to Paul as an internal tester.
 
@@ -120,16 +120,29 @@ Guards in the workflow (each fails the build):
 - On the generated Xcode project, a few minutes in: display name, `CFBundleName`, bundle ID, `MentraBluetoothSdkAnalyticsDisabled = true`, `FIREBASE_ANALYTICS_COLLECTION_ENABLED = false`, no permission prompt naming Mentra (other than the "Mentra Live" glasses) or `$(PRODUCT_NAME)`, no `GoogleService-Info` plist, no Sentry build step.
 - On the built app: the same Info.plist checks, the native version equal to the JavaScript version, all four production URLs present in `main.jsbundle`, and no Sentry DSN in `main.jsbundle`.
 
-### 7.2 Signed archive and TestFlight (to write once secrets exist)
+### 7.2 Signed archive and TestFlight (written, never run)
 
-Trigger: manual (`workflow_dispatch`) and tags `sightline-v*`. Same steps as 7.1 up to `pod install` (always a cold install: the signed workflow restores no caches of any kind), then:
+`.github/workflows/sightline-ios-testflight.yml`. It has not run and cannot run until Paul's Apple team and the four secrets exist; until then its first step stops and names what is missing. Nothing in it has been proven against Apple, so expect the first real run to need fixes.
 
-1. Write the API key from `SIGHTLINE_ASC_KEY_P8` to a file in the runner's temp folder (deleted at the end, never echoed).
-2. `xcodebuild archive ... -destination generic/platform=iOS -allowProvisioningUpdates -authenticationKeyPath ... -authenticationKeyID ... -authenticationKeyIssuerID ... DEVELOPMENT_TEAM=$SIGHTLINE_APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic`. Xcode creates the cloud-managed distribution certificate, registers the App ID with its capabilities and makes the profile. No certificate is stored in GitHub.
-3. `xcodebuild -exportArchive` with export options written at run time: `method app-store-connect`, `destination upload`, `signingStyle automatic`, the team ID. This uploads straight to App Store Connect.
-4. Paul opens TestFlight on the phone and installs.
+**How a build is shipped:** push a tag named `sightline-build-<anything>` that points at a commit on `sightline/main`. A tag is used because GitHub's "Run workflow" button (`workflow_dispatch`) only works for workflows on the repository's default branch, and the fork's default branch is upstream's `dev`. Making `sightline/main` the default branch would enable the button and is recommended, but it is a setting on Paul's fork and has not been changed.
 
-Confidence that steps 2 and 3 work on the first attempt with this project: moderate. Known risk is CocoaPods resource-bundle targets rejecting a team passed on the command line. The fallback is the boring one: fastlane (`cert`, `sigh`, `gym`, `pilot`) with the same API key; `mobile/Gemfile` already pins fastlane.
+**What it refuses to do** (first step, before anything is built):
+
+- run without all four secrets, or with a team id or key that is not shaped like one (names are printed, values never);
+- ship a commit that is not on `sightline/main`;
+- ship a commit that has no green "Sightline iOS simulator build" run. The identity, telemetry, backend and ring-fix guards live in the simulator workflow and are not copied. A commit that changed only documentation has no simulator run, so tag a commit that has one.
+
+**Build steps:** checkout, Xcode, Bun, Node, `.env`, `bun install`, prebuild, Sherpa and `pod install` are the simulator workflow's steps, copied verbatim. `mobile/scripts/sightline-workflows.test.mjs` runs inside the job and fails it if any of those steps, or the job-level settings, differ between the two files. When the simulator workflow's build steps change (phase 2 changes its `.env`), copy the changed step across. No caches are restored.
+
+**Signing and upload:**
+
+1. The API key from `SIGHTLINE_ASC_KEY_P8` is written to the runner's temp folder with owner-only permissions and deleted at the end of the job, also on failure. It is never echoed.
+2. `xcodebuild archive -destination generic/platform=iOS -allowProvisioningUpdates` with the API key and `CODE_SIGN_STYLE=Automatic`. The app target carries the team from prebuild (`SIGHTLINE_APPLE_TEAM_ID`, read by `mobile/scripts/sightline.cjs`); the team is not forced onto the CocoaPods targets. Xcode creates the cloud-managed distribution certificate and the profile. No certificate is stored in GitHub.
+3. The archived app is checked before it leaves the runner: bundle id, display name, version, Bluetooth SDK analytics off, no Firebase file, a JavaScript bundle present, and a provisioning profile for our team.
+4. `xcodebuild -exportArchive` with options built at run time: `method app-store-connect`, `destination upload`, automatic signing, `testFlightInternalTestingOnly` (the build can never be submitted for sale). This uploads straight to App Store Connect.
+5. Paul opens TestFlight on the phone and installs.
+
+Confidence that steps 2 and 4 work on the first attempt with this project: moderate. Known risks: Xcode refusing to sign a CocoaPods resource bundle, and the App ID missing a capability the entitlements ask for (Access Wi-Fi Information, Hotspot). The fallback is the boring one: fastlane (`cert`, `sigh`, `gym`, `pilot`) with the same API key; `mobile/Gemfile` already pins fastlane.
 
 Secrets (repository secrets, names chosen so no upstream workflow references them):
 
@@ -140,9 +153,17 @@ Secrets (repository secrets, names chosen so no upstream workflow references the
 | `SIGHTLINE_ASC_ISSUER_ID` | Issuer ID (a UUID) |
 | `SIGHTLINE_ASC_KEY_P8` | Full text of the `AuthKey_XXXXXXXXXX.p8` file |
 
-The API key needs the **Admin** role: cloud-managed distribution signing is refused to lower roles unless a separate permission is granted. GitHub does not give secrets to workflows triggered from other people's forks, and nobody else can push to this repository.
+The API key needs the **Admin** role: cloud-managed distribution signing is refused to lower roles unless a separate permission is granted. GitHub does not give secrets to workflows triggered from other people's forks, and nobody else can push branches or tags to this repository.
 
-Build numbers come from Mentra's scheme in `mobile/scripts/build-number.mjs` (derived from the commit time), so every new commit gets a higher number. Uploading the same commit twice is rejected by Apple as a duplicate; the workflow will pin `MENTRAOS_PINNED_BUILD_NUMBER` from the run number if that becomes a nuisance.
+Build numbers: the TestFlight job pins `MENTRAOS_PINNED_BUILD_NUMBER` to the minutes since 1970 at the start of the job, so each upload, including a re-run of the same commit, has a higher number than the last. Mentra's default for a non-release build (`.github/scripts/release-family.mjs`) is derived from the commit time and wraps every 4.9 days, which Apple would refuse sooner or later. An earlier version of this section said that default always increases; that was wrong.
+
+Known risks and deferred items for the first real run (from the independent review, 0 Critical, 2 High fixed, 5 Medium, 6 Low):
+
+- **A brand-new team with no registered device.** Automatic signing archives with a development profile, and Apple cannot make one for a team with zero devices. Section 9 step 6 registers Paul's iPhone for that reason. If it still fails, the fallback is fastlane with a distribution certificate created for the run and revoked at the end of it (no device and no stored key needed).
+- **Development certificates pile up.** Each run on a fresh runner may create another "Created via API" certificate. Revoke old ones at https://developer.apple.com/account/resources/certificates/list when Apple complains about the limit, or automate it once the flow is proven.
+- **Uploaded logs.** The key id, issuer id and team id are replaced with `[redacted]` in the log files before they are uploaded, because this repository's artifacts are public.
+- **Deferred until phase 2 (PR 7) has merged**, because they edit the simulator workflow it is also editing: run the workflow comparison test in the simulator job as well, move the built-app checks into one script both jobs call, and pin the third-party actions to commit ids.
+- **Deferred, small residual risk:** the four secrets are repository secrets. A GitHub environment limited to `sightline-build-*` tags would narrow who can read them; today every other workflow in the fork is disabled and pull requests from other forks never receive secrets.
 
 ## 8. Edge cases, failure modes, rollback
 
@@ -200,12 +221,16 @@ The Firebase, Google App Measurement and Sentry native libraries are still linke
 
 ## 9. Paul's Apple-side steps (after enrolment is approved)
 
-1. **Find the Team ID.** Open https://developer.apple.com/account and scroll to "Membership details". Copy the 10-character Team ID.
-2. **Create the API key.** Open https://appstoreconnect.apple.com/access/integrations/api . If the page shows "Request Access", click it and accept. Click the "+" next to "Active", name it `sightline-ci`, choose access **Admin**, click Generate. Copy the **Issuer ID** (top of the page) and the **Key ID** (in the table). Click "Download" once; the `AuthKey_XXXXXXXXXX.p8` file cannot be downloaded a second time.
-3. **Add four GitHub secrets.** Open https://github.com/jpaulgayjr-stack/MentraOS/settings/secrets/actions/new four times, once per row in the table in 7.2. For `SIGHTLINE_ASC_KEY_P8`, open the `.p8` file in Notepad, select all, copy, paste. Do not paste any of these into a chat.
-4. **Install TestFlight** on the iPhone: https://apps.apple.com/app/testflight/id899247664 and sign in with the same Apple ID.
+Steps 1 to 7 can be done in one sitting, about 20 minutes. None of these values is ever pasted into a chat.
 
-Later, once the rebrand is merged and before the first upload: Paul creates the app record at https://appstoreconnect.apple.com/apps ("+", New App, iOS, bundle ID `com.jpaulgay.sightline`). Exact steps come with the signed workflow.
+1. **Find the Team ID.** Open https://developer.apple.com/account and scroll to "Membership details". Copy the 10-character Team ID.
+2. **Create the API key.** Open https://appstoreconnect.apple.com/access/integrations/api . If the page shows "Request Access", click it and accept. On the "Team Keys" tab click the "+" next to "Active", name it `sightline-ci`, choose access **Admin**, click Generate. Copy the **Issuer ID** (top of the page) and the **Key ID** (in the table). Click "Download" once; the `AuthKey_XXXXXXXXXX.p8` file cannot be downloaded a second time.
+3. **Add four GitHub secrets.** Open https://github.com/jpaulgayjr-stack/MentraOS/settings/secrets/actions/new four times, once per row in the table in 7.2: type the name exactly, paste the value, click "Add secret". For `SIGHTLINE_ASC_KEY_P8`, open the `.p8` file in Notepad, select all, copy, paste.
+4. **Register the app's identifier.** Open https://developer.apple.com/account/resources/identifiers/add/bundleId . Choose "App IDs", Continue, "App", Continue. Description: `Sightline`. Bundle ID: "Explicit", `com.jpaulgay.sightline`. In the Capabilities list tick **Access Wi-Fi Information** and **Hotspot**. Continue, Register.
+5. **Create the app record.** Open https://appstoreconnect.apple.com/apps . Click "+", "New App". Platform: iOS. Name: `Sightline` (if Apple says the name is taken, use `Sightline JPG`; this name only shows in App Store Connect and TestFlight). Primary language: English (U.S.). Bundle ID: pick `com.jpaulgay.sightline`. SKU: `sightline-ios`. User Access: Full Access. Create.
+6. **Register the iPhone as a test device (once).** Apple will not issue the signing profile to a team that has no device. On the PC install "Apple Devices" from the Microsoft Store: https://apps.microsoft.com/detail/9np83lwlpz9k . Plug the iPhone in by cable, unlock it, tap Trust. In Apple Devices click the iPhone, then "General", and click the serial number until the line reads "UDID"; right-click it and copy (the exact clicks in that app are from memory, moderate confidence). Open https://developer.apple.com/account/resources/devices/add , Platform: iOS, Device Name: `Paul iPhone`, paste the UDID, Continue, Register.
+7. **Install TestFlight** on the iPhone: https://apps.apple.com/app/testflight/id899247664 and sign in with the same Apple ID.
+8. **After the first upload** (Claude says when): open https://appstoreconnect.apple.com/apps , click Sightline, the "TestFlight" tab, "Internal Testing" "+", name the group `Me`, add yourself as a tester. The build then appears in the TestFlight app on the phone. This is done once.
 
 ## 10. Phase 2 inventory: every Mentra host and cloud call in `mobile/`
 
