@@ -11,6 +11,8 @@ import {
 } from "@/utils/auth/authProvider.types"
 import {AuthingWrapperClient} from "@/utils/auth/provider/authingClient"
 import {AccountAuthProvider} from "@/utils/auth/provider/accountClient"
+import {LocalAuthProvider} from "@/utils/auth/provider/localClient"
+import {deploymentStore} from "@/services/deployment/store"
 
 export abstract class AuthClient {
   public onAuthStateChange(_callback: (event: string, session: MentraAuthSession) => void): Result<any, Error> {
@@ -121,7 +123,10 @@ function createLazyAuthClient(): AuthClient {
     if (!initPromise) {
       initPromise = (async () => {
         const isChina = engine.settings.get(SETTINGS.china_deployment.key)
-        if (isChina) {
+        if (deploymentStore.getActive().manifest.auth.mode === "local") {
+          // Sightline: no account service. The person holding the phone is the user.
+          client = new LocalAuthProvider()
+        } else if (isChina) {
           client = await AuthingWrapperClient.getInstance()
         } else {
           // Cloud V2 account auth (issue 019): Mentra's own OEM backend, no

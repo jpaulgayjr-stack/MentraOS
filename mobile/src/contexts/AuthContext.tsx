@@ -114,22 +114,25 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
         })
     } else {
       let authSubscription: {unsubscribe: () => void} | undefined
+      // Sightline: follow the deployment's telemetry policy here too (upstream
+      // hard-codes true for Mentra's own deployment).
+      const allowTelemetry = activeDeployment.manifest.telemetry
 
       void mentraAuth.getSession().then((res) => {
         if (res.is_error()) {
           console.error("AuthContext: Error getting initial session:", res.error)
-          applySession(null, true)
+          applySession(null, allowTelemetry)
           return
         }
         // No stored tokens at all: this phone is signed out.
         if (!res.value.token) settleSignedOutAccountSettings()
-        applySession(res.value, true)
+        applySession(res.value, allowTelemetry)
       })
 
       void (async () => {
         const res = await mentraAuth.onAuthStateChange((event, next: MentraAuthSession) => {
           console.log(`AuthContext: auth state ${event}, session ${next ? "present" : "absent"}`)
-          applySession(next, true)
+          applySession(next, allowTelemetry)
         })
         if (res.is_error()) return
         const changeData = res.value as {
@@ -166,6 +169,9 @@ export const AuthProvider: FC<{children: React.ReactNode}> = ({children}) => {
   }
 
   const logout = async () => {
+    // Sightline: the local user has nothing to sign out of and nowhere to sign
+    // back in. Wiping local data here would only lose the person's settings.
+    if (activeDeployment.manifest.auth.mode === "local") return
     console.log("AuthContext: Starting logout process")
     try {
       if (workspaceAuth && activeDeployment.kind === "workspace") {

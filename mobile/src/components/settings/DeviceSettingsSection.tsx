@@ -12,6 +12,7 @@ import {useEngineSnapshot} from "@/hooks/useEngineSnapshot"
 import {translate} from "@/i18n/translate"
 import {useNavigationStore} from "@/stores/navigation"
 import {deploymentStore} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {SETTINGS, useSetting, Capabilities, DeviceTypes, getModelCapabilities, engine} from "@mentra/engine"
 import {getGlassesImage} from "@/utils/getGlassesImage"
 import {askToForgetIosPairing} from "@/utils/pairing/iosStaleBond"
@@ -290,8 +291,9 @@ export function DeviceSettingsSection() {
         />
       )}
 
-      {/* Pair controller — super mode */}
-      {superMode && (
+      {/* Pair controller. Upstream shows it in super mode only; Sightline always does: it is the only way to the
+          ring's pairing screens, and the ring is why this fork exists. */}
+      {(superMode || isCloudless(deploymentStore.getActive().manifest)) && (
         <RouteButton
           icon={<Icon name="bluetooth" size={24} color={theme.colors.secondary_foreground} />}
           label={translate("deviceSettings:pairController")}

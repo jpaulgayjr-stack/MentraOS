@@ -17,13 +17,16 @@ import {PhoneWifiOverlay} from "@/effects/PhoneWifiOverlay"
 import {FleetSheets} from "@/effects/FleetSheets"
 import {RunningUpdatePrompt} from "@/effects/RunningUpdatePrompt"
 import {useDeployment} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 // import TranscriptionsListener from "@/effects/TranscriptionsListener"
 // import SherpaTest from "@/effects/SherpaTest"
 // import WhisperTest from "@/effects/WhisperTest"
 // import SherpaTest from "@/effects/SherpaTest"
 
 export const AllEffects = () => {
-  const {selectionResolved} = useDeployment()
+  const {selectionResolved, activeDeployment} = useDeployment()
+  // Sightline: with no server, nothing asks for feedback or talks to Fleet.
+  const hasCloud = !isCloudless(activeDeployment.manifest)
 
   return (
     <>
@@ -41,7 +44,7 @@ export const AllEffects = () => {
           <OtaUpdateChecker />
           <GalleryModeSync />
           <ConsoleLogger />
-          <ScreenshotFeedbackPrompt />
+          {hasCloud && <ScreenshotFeedbackPrompt />}
           <CapsuleMenu forceShow={false} />
           {/* Below the Compositor: a miniapp that waited opens over its waiting splash. */}
           <MiniappOpenWait />
@@ -49,7 +52,7 @@ export const AllEffects = () => {
           <QrScanOverlay />
           <PhoneWifiOverlay />
           <RunningUpdatePrompt />
-          <FleetSheets />
+          {hasCloud && <FleetSheets />}
           <MemoryWarningMonitor />
         </>
       )}

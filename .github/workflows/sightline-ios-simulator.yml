@@ -1,9 +1,16 @@
-# Sightline: prove the iOS toolchain on GitHub's free hosted macOS runner.
+# Sightline: build the phone app on GitHub's free hosted runners and prove, as
+# far as a machine without Bluetooth can, that it works with Mentra out of the
+# picture (docs/sightline/spec-phase2.md).
 #
-# Builds the phone app for the iOS Simulator, unsigned. No Apple account, no
-# secrets, no Mentra-owned runner. This is the phase 1 "can we build it at all"
-# gate (docs/sightline/spec-phase1.md). The signed archive and TestFlight upload
-# live in a separate workflow that is added once the Apple team exists.
+#   tests      unit tests and the fork's static guards (Linux)
+#   simulator  unsigned Release build for the iOS Simulator, with guards on the
+#              built app (identity, telemetry, no backend, URL scheme)
+#   boot       the built app booted in a simulator with every Mentra hostname
+#              sinkholed: it must reach Home with no sign-in and contact none
+#
+# No Apple account, no secrets, no Mentra-owned runner. The signed archive and
+# TestFlight upload live in a separate workflow that is added once the Apple
+# team exists.
 #
 # Deliberately independent of Mentra's own workflows: those need their
 # self-hosted Mac, their match-certs repo and their Doppler / R2 secrets.
@@ -24,6 +31,11 @@ on:
       - ".github/scripts/release-family.mjs"
       - ".github/workflows/sightline-ios-simulator.yml"
   workflow_dispatch:
+    inputs:
+      app_run_id:
+        description: "Boot the app built by this earlier run of the workflow instead of building again (run id)"
+        required: false
+        default: ""
 
 concurrency:
   group: sightline-ios-simulator-${{ github.ref }}
@@ -31,10 +43,71 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  tests:
+    name: Unit tests and static guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fork guards (config, hostnames, scripts, engine)
+        run: |
+          node --test mobile/scripts/sightline.test.mjs mobile/scripts/sightline-hosts.test.mjs mobile/scripts/sightline-jest-gate.test.mjs
+          python3 -m py_compile mobile/scripts/sightline-sim/sinkhole.py mobile/scripts/sightline-sim/pick-simulator.py mobile/scripts/sightline-sim/sinkhole-hosts.py
+          bash -n mobile/scripts/sightline-sim/boot.sh
+          # (The ring fix and the Bluetooth SDK's start-up call to Mentra are
+          # guarded, and the latter tested by running it, in the macOS job.)
+          # The engine builds no cloud client when Core and Runtime are null.
+          grep -A6 '^function construct(): void {' mobile/modules/engine/src/services/CloudClientService.ts \
+            | grep -q 'if (isCloudlessConfig(getConfigValues())) return' \
+            || { echo "::error::CloudClientService.construct() no longer stops for a deployment with no servers"; exit 1; }
+
+      - name: Install JavaScript dependencies
+        working-directory: mobile
+        run: |
+          # mobile's preinstall script is run with zx before node_modules exists.
+          bun add -g zx
+          bun install --no-frozen-lockfile
+
+      - name: Type check
+        working-directory: mobile
+        run: bun run compile
+
+      - name: Engine tests
+        working-directory: mobile/modules/engine
+        run: |
+          # The engine's own runner: every test file in its own bun process.
+          bash ./scripts/test.sh
+
+      - name: App tests (jest)
+        working-directory: mobile
+        run: |
+          # jest's own exit status is not the verdict: two upstream suites cannot
+          # load here (they read Mentra firmware sources this repository does not
+          # contain). The gate allows exactly those and nothing else.
+          bun run test --json --outputFile="$RUNNER_TEMP/jest.json" || true
+          node scripts/sightline-jest-gate.mjs "$RUNNER_TEMP/jest.json" "$PWD"
+
   simulator:
     name: Unsigned simulator build
+    # Skipped when an earlier run's build is being booted again.
+    if: ${{ !inputs.app_run_id }}
     runs-on: macos-15
     timeout-minutes: 150
     env:
@@ -42,14 +115,15 @@ jobs:
       SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # Homebrew is not used; keep it from auto-updating if a tool calls it.
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      # Phase 1 still signs in to Mentra's cloud, so the app is pinned to the
-      # environment their store app uses. The repository default is their dev
-      # cloud. The guards below compare against these literals, never against
-      # values read back from a file.
-      CLOUD_CORE: https://core.us-west-2.mentraglass.com
-      CLOUD_RUNTIME: https://runtime.us-west-2.mentraglass.com
-      CLOUD_MINIAPPS: https://miniapps.mentraglass.com/
-      CLOUD_DIRECTORY: https://api.apps.mentraglass.com/
+      # Sightline has no backend (phase 2). These are canaries, not servers: if
+      # any code still read the build environment for a cloud address, the
+      # canary would be compiled into the app, and "Verify the built app" fails
+      # on finding one. The guards compare against these literals, never
+      # against values read back from a file.
+      CLOUD_CORE: https://sightline-canary-core.invalid
+      CLOUD_RUNTIME: https://sightline-canary-runtime.invalid
+      CLOUD_MINIAPPS: https://sightline-canary-miniapps.invalid/
+      CLOUD_DIRECTORY: https://sightline-canary-directory.invalid/
 
     steps:
       - name: Checkout
@@ -115,8 +189,8 @@ jobs:
             || fail "BluetoothSdkUpdateCheck no longer stops when the SDK's analytics are disabled"
 
           # One flag gates Mentra's Sentry and Firebase collection in the app.
-          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/officialManifest.ts \
-            || fail "officialManifest.ts no longer sets telemetry: false"
+          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/sightlineManifest.ts \
+            || fail "sightlineManifest.ts no longer sets telemetry: false"
 
           # app.config.ts must still pass its config through the Sightline step.
           grep -q 'applySightline(' mobile/app.config.ts \
@@ -332,13 +406,29 @@ jobs:
             fail "A permission prompt still names Mentra"
           fi
 
-          # Backend: the JavaScript bundle carries the endpoints this job pins.
+          # URL scheme: sightline, and nothing of Mentra's.
+          schemes="$(plutil -extract CFBundleURLTypes json -o - "$app/Info.plist" 2>/dev/null \
+            | python3 -c 'import json,sys; print(" ".join(s for t in json.load(sys.stdin) for s in t.get("CFBundleURLSchemes", [])))' || true)"
+          echo "URL schemes: $schemes"
+          echo " $schemes " | grep -q " sightline " || fail "The sightline URL scheme is not registered"
+          if echo " $schemes " | grep -q -E " com\.mentra(\.[a-z.]+)? "; then
+            fail "A Mentra URL scheme is still registered: $schemes"
+          fi
+
+          # Backend: none. The embedded deployment is the local one, and no cloud
+          # address from the build environment (the canaries this job pins) is
+          # in the JavaScript bundle, the packaged Expo config, or any other file
+          # in the app.
           bundle="$app/main.jsbundle"
           if [ -f "$bundle" ]; then
             ls -lh "$bundle"
-            for url in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY"; do
-              [ -n "$url" ] || { fail "A pinned backend URL is empty"; continue; }
-              grep -a -q -F "$url" "$bundle" || fail "main.jsbundle does not contain $url"
+            grep -a -q -F "sightline-local" "$bundle" \
+              || fail "main.jsbundle does not contain the sightline-local deployment"
+            for canary in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY" "sightline-canary"; do
+              [ -n "$canary" ] || { fail "A canary address (CLOUD_*) is empty"; continue; }
+              if grep -a -q -F "$canary" "$bundle"; then
+                fail "main.jsbundle contains $canary: something still reads a cloud address from the build environment"
+              fi
             done
             # No Sentry DSN (https://<32 hex>@<host>.sentry.io/<id>) in the bundle.
             # The one key excluded is the sample DSN in a source comment of
@@ -351,7 +441,32 @@ jobs:
           else
             fail "main.jsbundle is missing from the app"
           fi
+          config="$(find "$app" -name app.config | head -1)"
+          if [ -z "$config" ] || [ ! -f "$config" ]; then
+            fail "The packaged Expo config (app.config) was not found in the app"
+          elif grep -a -q -i -E "mentraglass\.(com|cn)|mentra\.glass" "$config"; then
+            fail "The packaged Expo config names a Mentra host"
+          fi
+          carriers="$(grep -r -a -l -F "sightline-canary" "$app" || true)"
+          if [ -n "$carriers" ]; then
+            fail "A file in the app bundle contains a canary address: $(echo "$carriers" | tr '\n' ' ')"
+          fi
           exit "$failed"
+
+      - name: Package the built app for the boot job
+        working-directory: mobile/ios/build-sim/Build/Products/Release-iphonesimulator
+        run: |
+          tar -czf "$RUNNER_TEMP/sightline-simulator-app.tgz" Mentra.app
+          ls -lh "$RUNNER_TEMP/sightline-simulator-app.tgz"
+
+      - name: Upload the built app
+        uses: actions/upload-artifact@v4
+        with:
+          name: sightline-simulator-app
+          path: ${{ runner.temp }}/sightline-simulator-app.tgz
+          if-no-files-found: error
+          retention-days: 5
+          compression-level: 0
 
       - name: Show the end of the build log on failure
         if: failure()
@@ -369,3 +484,69 @@ jobs:
           path: ${{ runner.temp }}/xcodebuild.log
           if-no-files-found: ignore
           retention-days: 7
+
+  boot:
+    name: Boot with Mentra hosts blocked
+    needs: simulator
+    # Runs after a successful build, or on its own against an earlier run's build.
+    if: ${{ always() && (needs.simulator.result == 'success' || inputs.app_run_id) }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          pick=""
+          if [ -d /Applications/Xcode_26.2.app ]; then
+            pick=/Applications/Xcode_26.2.app
+          else
+            pick="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1 || true)"
+          fi
+          if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Download the built app
+        uses: actions/download-artifact@v4
+        with:
+          name: sightline-simulator-app
+          path: ${{ runner.temp }}/app
+          run-id: ${{ inputs.app_run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Boot in a simulator with every Mentra hostname sinkholed
+        run: |
+          mkdir -p "$RUNNER_TEMP/app/unpacked" "$RUNNER_TEMP/evidence"
+          tar -xzf "$RUNNER_TEMP/app/sightline-simulator-app.tgz" -C "$RUNNER_TEMP/app/unpacked"
+          bash mobile/scripts/sightline-sim/boot.sh "$RUNNER_TEMP/app/unpacked/Mentra.app" "$RUNNER_TEMP/evidence"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/evidence/summary.md" ]; then
+            cat "$RUNNER_TEMP/evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+            for name in boot-all-text link-1-prompt link-1 link-2 app-connections; do
+              file="$RUNNER_TEMP/evidence/$name.txt"
+              if [ -f "$file" ]; then echo "::group::$name"; cat "$file"; echo "::endgroup::"; fi
+            done
+            echo "::group::sinkhole log while the app ran (empty means no connection to a blocked host)"
+            if [ -f "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl" ]; then
+              cat "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl"
+            else
+              echo "(not written: the boot script stopped before the app had run)"
+            fi
+            echo "::endgroup::"
+          fi
+
+      - name: Upload the evidence (screenshots, text, sinkhole log)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sightline-boot-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 30

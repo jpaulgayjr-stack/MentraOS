@@ -13,6 +13,7 @@ import {useNavigationStore} from "@/stores/navigation"
 import {translate} from "@/i18n"
 import {refreshMyWorkspace, useMyWorkspaceStore} from "@/services/fleet/myWorkspace"
 import {useDeployment} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {isMiniappDevelopmentAllowed} from "@/services/deployment/miniappDevelopmentPolicy"
 import {SETTINGS, useSetting} from "@mentra/engine"
 import {useCallback, useRef} from "react"
@@ -50,23 +51,26 @@ export default function MainSettingsPage() {
         // Keep the indicator at the viewport edge during the miniapp's animated transitions.
         automaticallyAdjustsScrollIndicatorInsets={false}>
         <View style={{flex: 1, gap: theme.spacing.s6}}>
-          <Group title={translate("account:accountSettings")}>
-            <RouteButton
-              icon={<Icon name="circle-user" size={24} color={theme.colors.secondary_foreground} />}
-              label={translate("settings:profileSettings")}
-              onPress={() => push("/miniapps/settings/profile")}
-            />
-            <RouteButton
-              icon={<Icon name="message-2-star" size={24} color={theme.colors.secondary_foreground} />}
-              label={translate("settings:feedback")}
-              onPress={() =>
-                push("/miniapps/settings/feedback", {
-                  triggerSource: "settings",
-                  sourceRoute: "/miniapps/settings/",
-                })
-              }
-            />
-          </Group>
+          {/* Sightline: no account to manage and nobody to send feedback to. */}
+          {!isCloudless(activeDeployment.manifest) && (
+            <Group title={translate("account:accountSettings")}>
+              <RouteButton
+                icon={<Icon name="circle-user" size={24} color={theme.colors.secondary_foreground} />}
+                label={translate("settings:profileSettings")}
+                onPress={() => push("/miniapps/settings/profile")}
+              />
+              <RouteButton
+                icon={<Icon name="message-2-star" size={24} color={theme.colors.secondary_foreground} />}
+                label={translate("settings:feedback")}
+                onPress={() =>
+                  push("/miniapps/settings/feedback", {
+                    triggerSource: "settings",
+                    sourceRoute: "/miniapps/settings/",
+                  })
+                }
+              />
+            </Group>
+          )}
 
           {workspace && (
             <Group title={translate("fleet:settingsGroup")}>

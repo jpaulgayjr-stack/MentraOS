@@ -50,6 +50,7 @@ import {
 import GlobalEventEmitter from "@/utils/GlobalEventEmitter"
 import {useDebugStore} from "@/stores/debug"
 import {attemptReconnectToDefaultWearable} from "@/effects/Reconnect"
+import {LOCAL_USER_ID} from "@/utils/auth/localUser"
 import {ensureDevModeForUser} from "@/utils/dev/devModeAllowlist"
 import mentraAuth from "@/utils/auth/authClient"
 import {showAlert} from "@/utils/AlertUtils"
@@ -444,8 +445,13 @@ class MantleManager {
     // startup, not an island configuration seam.
     const deployment = deploymentStore.getActive()
     const workspaceAuth = deployment.kind === "workspace" ? createDeploymentAuthProvider(deployment) : null
+    // Sightline: the local user has an identity (miniapp storage is kept under
+    // it) and nothing to exchange for a token. No subject token, no auth events.
+    const localAuth = deployment.manifest.auth.mode === "local" ? {getUserId: async () => LOCAL_USER_ID} : null
     engine.configure({
-      auth: workspaceAuth
+      auth: localAuth
+        ? localAuth
+        : workspaceAuth
         ? {
             getMeetingAccount: async () => {
               const session = await workspaceAuth.getSession()

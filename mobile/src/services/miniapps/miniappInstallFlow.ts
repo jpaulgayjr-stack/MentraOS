@@ -25,6 +25,7 @@ import {confirmMiniappInstall} from "@/components/miniapps/MiniappInstallSheet"
 import {showAlert, waitForAlertHost} from "@/contexts/ModalContext"
 import {translate} from "@/i18n"
 import {deploymentStore} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {useNavigationStore} from "@/stores/navigation"
 import {blockUpdatingMiniapp} from "@/utils/miniappUpdatingAlert"
 import {askPermissionsUI} from "@/utils/PermissionsUtils"
@@ -72,7 +73,8 @@ export async function startMiniappInstallFromLink(
 
 /**
  * Install the listed miniapp a package link names: the directory says which URL serves it. Without a directory (a
- * deployment that names none), the package's page opens in the browser.
+ * deployment that names none), the package's page opens in the browser; Sightline, which has no servers, says there
+ * is no directory instead.
  */
 export async function startListedMiniappInstall(
   packageName: string,
@@ -82,6 +84,16 @@ export async function startListedMiniappInstall(
   const directoryUrl = deploymentStore.getActive().manifest.artifacts.directoryUrl
   if (!directoryUrl) {
     options.onPresent?.()
+    // Sightline: there is no directory, and the fallback below opens Mentra's website. Say so instead.
+    if (isCloudless(deploymentStore.getActive().manifest)) {
+      await waitForAlertHost()
+      await showAlert({
+        title: "No miniapp directory",
+        message: "This app has no miniapp directory. Install a miniapp from its own link or QR code.",
+        buttons: [{text: translate("common:ok")}],
+      })
+      return "failed"
+    }
     // An in-app browser, which never hands the page's own link back to the app.
     await WebBrowser.openBrowserAsync(directoryPackageLink(packageName)).catch((error) =>
       console.warn(`MiniappInstall: couldn't open ${packageName}'s page`, error),

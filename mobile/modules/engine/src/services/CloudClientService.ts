@@ -48,6 +48,7 @@ import {logCloudV2TranscriptMetric} from "./CloudTranscriptE2EMetrics"
 import {LocalMiniappUserIdentity} from "./LocalMiniappUserIdentity"
 import {nativeHttpResponseBody} from "./NativeHttpResponse"
 import {resolveCloudEndpoints} from "./cloudEndpointPolicy"
+import {isCloudlessConfig} from "./cloudless"
 import type {DesiredStateClient} from "./fleet/assignmentReconciler"
 import {sameCoreUrl} from "./fleet/coreUrl"
 
@@ -550,6 +551,10 @@ function stopLc3FrameSizeWatcher(): void {
 }
 
 function construct(): void {
+  // Sightline: a deployment with neither Core nor Runtime has no cloud client, whatever a reconnect pin or a host
+  // resolver says. Every caller already treats a missing client as "not connected", so nothing that needs the cloud
+  // gets as far as a request. This is the one place a client is built.
+  if (isCloudlessConfig(getConfigValues())) return
   ensureTransports()
 
   const endpoints = resolveEndpoints()

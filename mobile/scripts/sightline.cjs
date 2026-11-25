@@ -11,6 +11,9 @@
 const SIGHTLINE = Object.freeze({
   appName: "Sightline",
   bundleId: "com.jpaulgay.sightline",
+  // The app's own URL scheme. Upstream's is `com.mentra`, which Mentra's
+  // sign-in returns through and which the Mentra app on the same phone claims.
+  scheme: "sightline",
   icon: "./assets/app-icons/sightline_icon.png",
   adaptiveIcon: "./assets/app-icons/sightline_icon_foreground.png",
   splashLight: "./assets/logo/sightline_logo_light.png",
@@ -21,6 +24,8 @@ const BLUETOOTH_SDK_PLUGIN = "./modules/bluetooth-sdk/app.plugin.js"
 const SPLASH_PLUGIN = "expo-splash-screen"
 // Build-time plugins that exist only to feed a Mentra-owned service.
 const REMOVED_PLUGINS = new Set(["@sentry/react-native/expo"])
+// The URL scheme upstream registers for the Mentra App.
+const UPSTREAM_SCHEME = "com.mentra"
 
 // $(PRODUCT_NAME), ${TARGET_NAME} and the like, as library plugins write them.
 const XCODE_NAME_PLACEHOLDER = /\$[({](?:PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/g
@@ -51,9 +56,17 @@ function rebrandPrompts(infoPlist) {
   return mapValues(infoPlist, (key, value) => (/UsageDescription$/.test(key) ? rebrandText(value) : value))
 }
 
-/** Sightline's Info.plist: our prompts, and the name iOS reports (the Xcode project keeps upstream's). */
-function sightlineInfoPlist(infoPlist) {
-  return {...rebrandPrompts(infoPlist), CFBundleName: SIGHTLINE.appName}
+/**
+ * Sightline's Info.plist: our prompts, the name iOS reports (the Xcode project keeps upstream's), and our URL scheme
+ * in place of upstream's.
+ */
+function sightlineInfoPlist(infoPlist, upstreamSchemes = [UPSTREAM_SCHEME]) {
+  const plist = rebrandPrompts(infoPlist)
+  return {
+    ...plist,
+    CFBundleName: SIGHTLINE.appName,
+    CFBundleURLTypes: sightlineUrlTypes(plist.CFBundleURLTypes, [...upstreamSchemes, UPSTREAM_SCHEME]),
+  }
 }
 
 /**
@@ -71,6 +84,24 @@ function withSightlineInfoPlist(config) {
     mod.modResults = sightlineInfoPlist(mod.modResults)
     return mod
   })
+}
+
+/** Replace upstream's URL scheme with ours in the Info.plist URL types. Other schemes (msauth...) are kept. */
+function sightlineUrlTypes(urlTypes, upstreamSchemes) {
+  const types = (urlTypes ?? []).map((type) => ({
+    ...type,
+    CFBundleURLSchemes: (type.CFBundleURLSchemes ?? []).map((scheme) =>
+      upstreamSchemes.includes(scheme) ? SIGHTLINE.scheme : scheme,
+    ),
+  }))
+  const schemes = types.flatMap((type) => type.CFBundleURLSchemes)
+  // Fail the build rather than ship an app that answers Mentra's links.
+  const leftover = schemes.filter((scheme) => scheme === UPSTREAM_SCHEME || scheme.startsWith(`${UPSTREAM_SCHEME}.`))
+  if (leftover.length > 0) {
+    throw new Error(`[sightline] Info.plist still registers a Mentra URL scheme: ${leftover.join(", ")}`)
+  }
+  if (!schemes.includes(SIGHTLINE.scheme)) types.unshift({CFBundleURLSchemes: [SIGHTLINE.scheme]})
+  return types
 }
 
 function mapValues(object, fn) {
@@ -124,13 +155,20 @@ function applySightline(config, env = process.env) {
   // workflow; an unsigned build has none.
   const {appleTeamId: _upstreamTeamId, ...ios} = config.ios ?? {}
   const teamId = env.SIGHTLINE_APPLE_TEAM_ID?.trim()
+  const upstreamSchemes = [config.scheme].flat().filter((scheme) => typeof scheme === "string")
+
+  // Upstream packages the Core URL of the build environment here. Nothing
+  // reads it, and Sightline has no Core: do not ship the address.
+  const {mentraBackendTarget: _backendTarget, ...extra} = config.extra ?? {}
 
   return {
     ...config,
+    extra,
+    scheme: SIGHTLINE.scheme,
     ios: {
       ...ios,
       ...(teamId ? {appleTeamId: teamId} : {}),
-      infoPlist: sightlineInfoPlist(ios.infoPlist ?? {}),
+      infoPlist: sightlineInfoPlist(ios.infoPlist ?? {}, upstreamSchemes),
     },
     plugins: [
       withSightlineInfoPlist,
@@ -140,4 +178,12 @@ function applySightline(config, env = process.env) {
   }
 }
 
-module.exports = {SIGHTLINE, isSightline, applySightline, rebrandText, rebrandPrompts, withSightlineInfoPlist}
+module.exports = {
+  SIGHTLINE,
+  isSightline,
+  applySightline,
+  sightlineInfoPlist,
+  rebrandText,
+  rebrandPrompts,
+  withSightlineInfoPlist,
+}

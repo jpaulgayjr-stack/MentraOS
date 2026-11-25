@@ -1,3 +1,4 @@
+import {APP_SCHEME} from "@/constants/appConfig"
 import {BgTimer, engine, type AppPermissionReceipt, type AppPermissionStatus} from "@mentra/engine"
 import {AppState} from "react-native"
 
@@ -38,7 +39,7 @@ export function parseAttendedPermissionRequest(link: string): AttendedPermission
   const timeout = url.searchParams.get("timeout_ms") ?? ""
   const validId = (id: string) => id.trim() === id && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(id)
   if (
-    url.protocol !== "com.mentra:" ||
+    url.protocol !== `${APP_SCHEME}:` ||
     url.hostname !== "test" ||
     url.pathname !== "/request-permissions" ||
     url.username ||

@@ -4,6 +4,9 @@ import {refreshWorkspaceManifest} from "./refresh"
 import type {ActiveDeployment, DeploymentManifest, WorkspaceDeployment} from "./types"
 import {MicrosoftEntraDeploymentAuthProvider} from "./auth/MicrosoftEntraDeploymentAuthProvider"
 
+// Sightline embeds a deployment with no servers; this suite is about one that has them.
+jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
+
 const WORKSPACE = "https://mentra.enterprise.example"
 
 function manifest(overrides: Partial<DeploymentManifest> = {}): DeploymentManifest {

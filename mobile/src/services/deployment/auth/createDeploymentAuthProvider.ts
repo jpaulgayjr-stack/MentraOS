@@ -20,5 +20,8 @@ function newProvider(deployment: WorkspaceDeployment): DeploymentAuthProvider {
       return new MicrosoftEntraDeploymentAuthProvider(deployment)
     case "mentra-account":
       throw new Error("mentra-account workspace auth is not supported in deployment schema v1")
+    case "local":
+      // Sightline: the local user belongs to the embedded deployment only.
+      throw new Error("local auth is not a workspace sign-in")
   }
 }

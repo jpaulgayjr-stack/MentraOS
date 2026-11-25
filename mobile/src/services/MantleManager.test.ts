@@ -128,6 +128,7 @@ function resetMantleTestState() {
 }
 
 let miniappConfig: Record<string, any>
+let engineAuth: Record<string, any>
 let requestWifiSetup: (reason?: string, packageName?: string) => Promise<void>
 let routerPushSpy: jest.SpiedFunction<typeof router.push>
 let syncCoreDisplayOwner: () => void
@@ -166,6 +167,7 @@ describe("MantleManager", () => {
     await mantle.init()
     requestWifiSetup = (engine.configure as jest.Mock).mock.calls[0][0].ui.requestWifiSetup
     miniappConfig = (engine.configure as jest.Mock).mock.calls[0][0].config
+    engineAuth = (engine.configure as jest.Mock).mock.calls[0][0].auth
     syncCoreDisplayOwner = (useAppStatusStore.subscribe as jest.Mock).mock.calls.at(-1)![0]
     syncGlassesPresentationState = (engine.glasses.onStatus as jest.Mock).mock.calls.at(-1)![0]
   })
@@ -992,6 +994,19 @@ describe("MantleManager", () => {
       }
     },
   )
+
+  // Sightline (docs/sightline/spec-phase2.md): the engine is started as the local user, with no server and no token.
+  it("hands the engine the local user, no token source, and a deployment with no servers", async () => {
+    expect(Object.keys(engineAuth)).toEqual(["getUserId"])
+    expect(await engineAuth.getUserId()).toBe("local:sightline")
+    expect(miniappConfig.coreUrl).toBeNull()
+    expect(miniappConfig.runtimeUrl).toBeNull()
+    expect(miniappConfig.runtimeRealtimeSession).toBe(false)
+    expect(miniappConfig.features.cloudSpeech).toBe(false)
+    expect(miniappConfig.features.onDeviceSpeech).toBe(true)
+    expect(miniappConfig.otaManifestUrl).toBeNull()
+    expect(miniappConfig.allowLegacyOtaFallback).toBe(false)
+  })
 })
 
 describe("runtime recovery initialization", () => {

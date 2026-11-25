@@ -16,6 +16,7 @@ import {SplashVideo} from "@/components/splash/SplashVideo"
 import {resolvedEndpoints} from "@/services/cloudClient"
 import {fetchMinimumClientVersion} from "@/utils/cloudVersion"
 import {refreshWorkspaceManifest, useDeployment} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/sightlineManifest"
 import {deploymentDebugOverrides} from "@/services/deployment/debugOverrides"
 import {
   cloudSwitchSignsOut,
@@ -25,7 +26,7 @@ import {
 import {confirmCloudSwitch} from "@/utils/confirmCloudSwitch"
 
 // Types
-type ScreenState = "loading" | "connection" | "outdated" | "missingVersion" | "success"
+type ScreenState = "loading" | "connection" | "outdated" | "missingVersion" | "startFailed" | "success"
 
 interface StatusConfig {
   icon: string
@@ -75,6 +76,9 @@ export default function InitScreen() {
   const [canSkipUpdate, setCanSkipUpdate] = useState(false)
   const [isRetrying, setIsRetrying] = useState(false)
   const [isBlockedByVersion, setIsBlockedByVersion] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
+  // Sightline: no server to ask about versions, and no account to sign in to.
+  const cloudless = isCloudless(activeDeployment.manifest)
   // Zustand store hooks
   // Runtime is the canonical boot version-policy service. Core keeps its
   // legacy endpoint only for already-released clients.
@@ -123,7 +127,8 @@ export default function InitScreen() {
     const onboardingDone = engine.settings.get(SETTINGS.onboarding_completed.key)
     const wearable = engine.settings.get(SETTINGS.default_wearable.key)
 
-    if (!onboardingDone && !wearable) {
+    // Sightline goes straight to Home, whose first-run card offers pairing.
+    if (!cloudless && !onboardingDone && !wearable) {
       await new Promise((resolve) => setTimeout(resolve, NAVIGATION_DELAY))
       replace("/onboarding/welcome", {transition: "fade"})
       return
@@ -142,6 +147,26 @@ export default function InitScreen() {
     setAnimationDelayed()
     clearHistoryAndGoHome({transition: "none"})
   }, [user, getPendingRoute, processUrl, clearHistoryAndGoHome, replace, replaceAll, setPendingRoute, setAnimation])
+
+  /**
+   * Sightline boot: start the engine as the local user and go Home. No version
+   * check, no cached version floor, no token exchange, no network.
+   */
+  const bootLocal = async (): Promise<void> => {
+    setState("loading")
+    setStartError(null)
+    try {
+      setBootPhase("Initializing core…")
+      await mantle.init()
+      setBootPhase("Navigating…")
+      await navigateToDestination()
+    } catch (error) {
+      // Say so instead of leaving the splash up for ever.
+      console.error("INDEX: local start failed:", error)
+      setStartError(error instanceof Error ? error.message : String(error))
+      setState("startFailed")
+    }
+  }
 
   const checkLoggedIn = async (): Promise<void> => {
     if (!user) {
@@ -315,6 +340,14 @@ export default function InitScreen() {
           description: translate("versionCheck:missingVersionDescription"),
         }
 
+      case "startFailed":
+        return {
+          icon: "circle-x",
+          iconColor: theme.colors.destructive,
+          title: "Sightline could not start",
+          description: startError ?? "Unknown error",
+        }
+
       case "outdated":
         return {
           icon: "update",
@@ -361,6 +394,10 @@ export default function InitScreen() {
 
     const init = async () => {
       console.log("INDEX: init()")
+      if (cloudless) {
+        await bootLocal()
+        return
+      }
       // Runs beside the version check, which calls the same workspace Runtime.
       manifestRefreshRef.current = refreshWorkspaceManifest({
         isRunning: () => mantle.isInitialized(),
@@ -418,6 +455,8 @@ export default function InitScreen() {
 
       {/* Buttons */}
       <View className="gap-3">
+        {state === "startFailed" && <Button flexContainer onPress={bootLocal} text="Try again" />}
+
         {state === "connection" && (
           <Button
             flexContainer

@@ -21,7 +21,6 @@ it.each(["com.mentra://settings", "com.mentra:///settings", "/settings"])(
 it.each([
   "/home",
   "com.mentra://home",
-  "com.mentra://auth/callback?code=example",
   "https://example.com/test/submit-incident-report",
   "https://example.com/settings",
   "com.mentra://settings/profile",
@@ -66,7 +65,29 @@ it.each([
   expect(redirectSystemPath({path: link, initial: true})).toBe("/")
 })
 
-it("still opens the reset screen from an unrelated host's path untouched", () => {
-  const other = "https://example.com/auth/reset-password"
-  expect(redirectSystemPath({path: other, initial: false})).toBe(other)
+// Sightline: there is no account, so no link may open a sign-in, callback or reset screen, whatever host it names.
+// A warm app stays where it is and a cold one boots normally. (Upstream let these through to Expo Router.)
+it.each([
+  "com.mentra://auth/callback?code=example",
+  "com.mentra://auth/start",
+  "com.mentra://auth/workspace-signin",
+  "com.mentra:///auth/start",
+  "com.mentra:////auth/start",
+  "com.mentra:auth/start",
+  "com.mentra:auth/start?x=1",
+  "com.mentra://./auth/start",
+  "com.mentra://../auth/start",
+  "com.mentra://%2e/auth/start",
+  "com.mentra://AUTH/start",
+  "//auth/start",
+  "auth/start",
+  "com.mentra://miniapps/settings/change-password",
+  "com.mentra://miniapps/settings/profile",
+  "/miniapps/settings/data-export",
+  "/auth/start",
+  "/auth/email-login?email=a%40example.com",
+  "https://example.com/auth/reset-password",
+])("never routes to an account screen: %s", (link) => {
+  expect(redirectSystemPath({path: link, initial: false})).toBeNull()
+  expect(redirectSystemPath({path: link, initial: true})).toBe("/")
 })

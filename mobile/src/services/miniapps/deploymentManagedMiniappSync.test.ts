@@ -28,6 +28,8 @@ const mockRemoteRead = jest.fn()
 const mockUnzip = jest.fn()
 const mockMove = jest.fn()
 
+// Sightline embeds a deployment with no servers; this suite is about one that has them.
+jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
 jest.mock("@/services/MantleManager", () => ({__esModule: true, default: {cleanup: jest.fn(async () => {})}}))
 jest.mock("@/services/cloudClient", () => ({
   cloudClient: {
