@@ -1,38 +1,38 @@
-# AD Glass, phase 1 spec: our own build of the phone app
+# Sightline, phase 1 spec: our own build of the phone app
 
 Status: draft for review, 2026-11-25. Owner: Paul. Engineering: Claude.
-Branch: `ad-glass/main` on `jpaulgayjr-stack/MentraOS` (a public fork of `Mentra-Community/MentraOS`).
+Branch: `sightline/main` on `jpaulgayjr-stack/MentraOS` (a public fork of `Mentra-Community/MentraOS`).
 
 This file covers phase 1 in full and lists the phase 2 inventory. Everything stated about the code was read from this checkout (upstream `dev` at `323255060`) unless it is tagged with a confidence level.
 
 ## 1. Goal
 
-Paul installs an app called **AD Glass** on his iPhone from TestFlight, built from this fork by GitHub's free macOS runners and signed by his own Apple team, and it pairs the Even G2 glasses and the R1 ring and runs the AD Home miniapp.
+Paul installs an app called **Sightline** on his iPhone from TestFlight, built from this fork by GitHub's free macOS runners and signed by his own Apple team, and it pairs the Even G2 glasses and the R1 ring and runs the AD Home miniapp.
 
 Phase 1 does not remove Mentra's login or cloud. It proves we can build, sign and ship the app ourselves, and it carries the ring fix. Phase 2 cuts the cord (section 10).
 
 "Done" for phase 1:
 
 1. Unsigned simulator build green on GitHub Actions (toolchain proof, no Apple account needed).
-2. Rebrand commit merged on `ad-glass/main`: new bundle ID, name, icon, no Mentra telemetry.
+2. Rebrand commit merged on `sightline/main`: new bundle ID, name, icon, no Mentra telemetry.
 3. Signed archive uploaded to TestFlight by a workflow using Paul's App Store Connect API key.
-4. On Paul's iPhone: AD Glass installs, signs in, pairs G2 and R1 (the ring pairs because of the fix), AD Home runs and transcribes a voice note on the phone.
+4. On Paul's iPhone: Sightline installs, signs in, pairs G2 and R1 (the ring pairs because of the fix), AD Home runs and transcribes a voice note on the phone.
 
 ## 2. Decisions
 
 | Topic | Decision | Why |
 |---|---|---|
-| App name | **AD Glass** | No Mentra brand. Apache 2.0 section 6 grants no trademark rights. |
-| Bundle ID | `com.domingueandco.adglass` | Matches AD Home's `com.domingueandco.adhome`. Permanent once the App Store Connect record exists. |
-| URL scheme | Stays `com.mentra` in phase 1, becomes `adglass` in phase 2 | Mentra's Google and Apple sign-in return to the app through this scheme (`accountClient.ts:558-569`). Changing it now risks breaking login while login is still required. It is a technical identifier, not branding. |
-| Xcode project name | Stays `Mentra` (`ios/Mentra.xcworkspace`, scheme `Mentra`) in phase 1 | Not visible to the user. Mentra's scripts and our workflow open it by that name. `CFBundleDisplayName` and `CFBundleName` are set to AD Glass. |
+| App name | **Sightline** (Paul, 2026-11-25) | No Mentra brand: Apache 2.0 section 6 grants no trademark rights. And no company brand: the first builds were called "AD Glass", and Paul asked for a name that is not tied to Atelier Domingue. The rename covered everything that carried the old name: app name, bundle ID, files, folders, branches, the workflow, and the names of the GitHub secrets (none had been created yet). Git history, old pull request titles and old run logs keep the old name. |
+| Bundle ID | `com.jpaulgay.sightline` (Paul, 2026-11-25) | A personal prefix with no company in it, at Paul's request; before the rename it was `com.domingueandco.adglass`. Permanent once the App Store Connect record exists; free to change until then. The AD Home miniapp keeps its own ID, `com.domingueandco.adhome`: renaming it is a separate decision in its own repository. |
+| URL scheme | Stays `com.mentra` in phase 1, becomes `sightline` in phase 2 | Mentra's Google and Apple sign-in return to the app through this scheme (`accountClient.ts:558-569`). Changing it now risks breaking login while login is still required. It is a technical identifier, not branding. |
+| Xcode project name | Stays `Mentra` (`ios/Mentra.xcworkspace`, scheme `Mentra`) in phase 1 | Not visible to the user. Mentra's scripts and our workflow open it by that name. `CFBundleDisplayName` and `CFBundleName` are set to Sightline. |
 | Backend in phase 1 | Mentra **production** (`core.us-west-2.mentraglass.com`, `runtime.us-west-2.mentraglass.com`, `miniapps.mentraglass.com`, `api.apps.mentraglass.com`) | Paul's existing account lives there. The repo default is Mentra's dev cloud. |
 | Sentry | Removed: drop the `@sentry/react-native/expo` plugin entry, leave `EXPO_PUBLIC_SENTRY_DSN` empty | The plugin names Mentra's org (`mentra-labs`). With an empty DSN `SentrySetup.tsx` never initializes. No replacement in phase 1: a crash service is a new vendor and needs Paul's approval. |
 | Firebase | Removed: variant with `includeFirebase: false`, no `GoogleService-Info.plist` | The committed plists point at Mentra's Firebase project. Mentra's own China variant already builds without Firebase, so the path exists. |
 | Bluetooth SDK analytics (PostHog) | Off: plugin option `analytics: false` | It is on by default, hard-coded to `us.i.posthog.com`, and ignores the telemetry flag (`BluetoothSdkAnalytics.swift:39-40`, `analyticsProps.ts:26-37`). |
 | Mapbox | **No token and no Mapbox account needed.** Navigation stays compiled in but inert in phase 1. Removal is a phase 2 item. | Verified 2026-11-25: the Mapbox iOS binaries (`MapboxCommon`, `MapboxCoreMaps`, `MapboxNavigationNative`, `MapboxNavSdk`) download from `api.mapbox.com` without credentials (HTTP 200 unauthenticated). The secret `sk.` token Mentra's CI demands is no longer required. The public `pk.` token only matters at run time for the navigation miniapp, which Paul does not use; the build uses the placeholder from `.env.example`. See section 6. |
 | ONNX Runtime pod | Depend on `onnxruntime-c` directly and resolve it from `mobile/podspecs/onnxruntime-c.podspec`, which downloads Microsoft's own NuGet package `Microsoft.ML.OnnxRuntime` 1.18.0, pinned by sha256 | The host both trunk pods download from, `download.onnxruntime.ai`, stopped serving the archives around 2026-11-20 (wrong TLS certificate, 404 behind it), which breaks `pod install` for every project that uses them. The Objective-C wrapper pod upstream asks for is not used by any source file; the C library is only needed so the vendored sherpa-onnx library links. The package's SHA-512 was checked against the hash nuget.org publishes. Remove when upstream fixes it or the host returns. |
-| Mentra's own workflows | Files left in the tree, untouched, but **disabled in the fork's GitHub settings** (seven of them, on 2026-11-25) | Deleting the files causes a conflict on every upstream merge. They do not trigger on pushes to `ad-glass/**`, but they do trigger on pull requests: opening the first PR inside the fork queued six of them (iOS build, Android build, ASG client build, quality checks, PR agent, PR checkout helper) plus `CI Gate`, all waiting for Mentra's runners. They were cancelled and disabled with `gh api -X PUT repos/jpaulgayjr-stack/MentraOS/actions/workflows/<id>/disable`. A workflow that upstream adds later registers itself the first time it triggers, so after each upstream merge check `gh api repos/jpaulgayjr-stack/MentraOS/actions/workflows` and disable anything that is not ours. That happened once already: the first PR commit that touched the Bluetooth SDK registered four more. One of them, `Bluetooth SDK Apple Platforms`, is worth keeping on: it runs on a GitHub-hosted runner with no secrets and runs the SDK's Swift tests, which include the fork's own. The other three (`Mobile App Android Unit Tests`, `OEM Host Boundary Gate`, `Example App Builds`) wait for runners only Mentra has; they cost nothing but sit in the queue until the owner disables them on the repository's Actions page. Our secrets use an `ADGLASS_` prefix so no upstream workflow can read them by name. |
+| Mentra's own workflows | Files left in the tree, untouched, but **disabled in the fork's GitHub settings** (seven of them, on 2026-11-25) | Deleting the files causes a conflict on every upstream merge. They do not trigger on pushes to `sightline/**`, but they do trigger on pull requests: opening the first PR inside the fork queued six of them (iOS build, Android build, ASG client build, quality checks, PR agent, PR checkout helper) plus `CI Gate`, all waiting for Mentra's runners. They were cancelled and disabled with `gh api -X PUT repos/jpaulgayjr-stack/MentraOS/actions/workflows/<id>/disable`. A workflow that upstream adds later registers itself the first time it triggers, so after each upstream merge check `gh api repos/jpaulgayjr-stack/MentraOS/actions/workflows` and disable anything that is not ours. That happened once already: the first PR commit that touched the Bluetooth SDK registered four more (`Bluetooth SDK Apple Platforms`, `Mobile App Android Unit Tests`, `OEM Host Boundary Gate`, `Example App Builds`). All four are disabled too, so the only active workflow is ours; the Swift tests the first of them ran are now run by our own workflow. Our secrets use a `SIGHTLINE_` prefix so no upstream workflow can read them by name. |
 | Fork vs standalone repo | Stay on the fork for phase 1 | Cheap upstream merges. Risk to manage: on a fork, `gh pr create` targets Mentra's repo by default. Every PR command must pass `--repo jpaulgayjr-stack/MentraOS`. The `upstream` remote in the local clone has its push URL disabled. |
 
 ## 3. Inputs
@@ -44,9 +44,9 @@ Phase 1 does not remove Mentra's login or cloud. It proves we can build, sign an
 
 ## 4. Outputs
 
-1. `.github/workflows/ad-glass-ios-simulator.yml`: unsigned Release build for the iOS Simulator on every push to `ad-glass/**` that touches the app. Exists now.
-2. `.github/workflows/ad-glass-ios-testflight.yml`: signed archive and upload. Written after the secrets exist (section 7).
-3. Rebrand commit(s) on `ad-glass/main` (section 5).
+1. `.github/workflows/sightline-ios-simulator.yml`: unsigned Release build for the iOS Simulator on every push to `sightline/**` that touches the app. Exists now.
+2. `.github/workflows/sightline-ios-testflight.yml`: signed archive and upload. Written after the secrets exist (section 7).
+3. Rebrand commit(s) on `sightline/main` (section 5).
 4. An App Store Connect app record and TestFlight builds, visible only to Paul as an internal tester.
 
 Nothing is written to Mentra's repo. No upstream PRs come from this work.
@@ -57,16 +57,16 @@ Kept deliberately small so upstream merges stay easy. One seam: a new variant in
 
 | File | Change |
 |---|---|
-| `mobile/app.config.ts` | Add a `VARIANTS.adglass` entry (`appName: "AD Glass"`, `appLinks: false`, `includeFirebase: false`, no Google plist, our icon) and select it. Read `appleTeamId` from `process.env.ADGLASS_APPLE_TEAM_ID` instead of the literal `T5XXXL6N36` (line 228). Pass `analytics: false` to the bluetooth-sdk plugin (lines 329-340). Remove the Sentry plugin entry (lines 458-475). Rewrite the word "Mentra" in the permission prompts (`NS*UsageDescription`, lines 247-288, and the `expo-media-library` and `expo-location` strings) by one small function over the generated `infoPlist`, not by editing each string. Set `CFBundleName`. |
-| `mobile/scripts/android-package-name.cjs` | Return `com.domingueandco.adglass` as the base. iOS takes its bundle ID from here (`app.config.ts:102-103`). |
-| `mobile/scripts/ad-glass.cjs` (new, with `ad-glass.d.cts` and `ad-glass.test.mjs`) | As built, the changes in the first row live here, not in `app.config.ts`: `app.config.ts` only adds the `adglass` variant and passes its finished config through `applyAdGlass`. The script drops Mentra's team id, removes the Sentry plugin, sets `analytics: false`, rewrites the permission prompts (including the `$(PRODUCT_NAME)` placeholder, which Xcode would show as "Mentra") and sets `CFBundleName`. It also registers a step that repeats the prompt rewrite while the native project is generated, because library plugins write their default prompts at that point. |
+| `mobile/app.config.ts` | Add a `VARIANTS.sightline` entry (`appName: "Sightline"`, `appLinks: false`, `includeFirebase: false`, no Google plist, our icon) and select it. Read `appleTeamId` from `process.env.SIGHTLINE_APPLE_TEAM_ID` instead of the literal `T5XXXL6N36` (line 228). Pass `analytics: false` to the bluetooth-sdk plugin (lines 329-340). Remove the Sentry plugin entry (lines 458-475). Rewrite the word "Mentra" in the permission prompts (`NS*UsageDescription`, lines 247-288, and the `expo-media-library` and `expo-location` strings) by one small function over the generated `infoPlist`, not by editing each string. Set `CFBundleName`. |
+| `mobile/scripts/android-package-name.cjs` | Return `com.jpaulgay.sightline` as the base. iOS takes its bundle ID from here (`app.config.ts:102-103`). |
+| `mobile/scripts/sightline.cjs` (new, with `sightline.d.cts` and `sightline.test.mjs`) | As built, the changes in the first row live here, not in `app.config.ts`: `app.config.ts` only adds the `sightline` variant and passes its finished config through `applySightline`. The script drops Mentra's team id, removes the Sentry plugin, sets `analytics: false`, rewrites the permission prompts (including the `$(PRODUCT_NAME)` placeholder, which Xcode would show as "Mentra") and sets `CFBundleName`. It also registers a step that repeats the prompt rewrite while the native project is generated, because library plugins write their default prompts at that point. |
 | `mobile/src/services/deployment/officialManifest.ts` | `telemetry: false` (upstream `true`). This one flag gates Sentry and Firebase start-up in the app. `configuration.test.ts` in the same folder asserts the new value. |
 | `mobile/modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift` | One early return: the SDK's start-up "is there a newer SDK" call is skipped when the app has turned the SDK's analytics off. Upstream sends it regardless, to `core.mentraglass.com`, with a per-install id, the bundle ID and the OS version, and Mentra's Core forwards that to their PostHog project (`cloud-v2/packages/core/src/services/bluetooth-sdk-update.service.ts`). The only thing lost is a console banner for developers. Two tests in `ios/Tests/BluetoothSdkUpdateCheckTests.swift` (also an edited upstream file) prove it by running it. iOS only: the Android twin (`BluetoothSdkUpdateCheck.kt`) is untouched because no Android build is planned, and the module's `README.md` still describes upstream's behaviour. |
-| `mobile/modules/bluetooth-sdk/ios/Source/DeviceManager.swift` | The ring fix (section 3), marked with an "AD Glass" comment. |
+| `mobile/modules/bluetooth-sdk/ios/Source/DeviceManager.swift` | The ring fix (section 3), marked with an "Sightline" comment. |
 | `mobile/podspecs/onnxruntime-c.podspec`, one `extraPods` entry in `app.config.ts`, one line in `mobile/modules/bluetooth-sdk/ios/MentraBluetoothSDK.podspec` | Already done (commit `2b9c007b4`): ONNX Runtime from NuGet. Not a rebrand change; listed here so this table names every upstream file the fork edits. |
-| `mobile/assets/app-icons/ad_glass_icon.png`, `ad_glass_icon_foreground.png`, `mobile/assets/logo/ad_glass_logo_light.png`, `ad_glass_logo_dark.png` (new) | Neutral AD Glass art for the home-screen icon and splash. Upstream's own art files are left untouched and unused. |
+| `mobile/assets/app-icons/sightline_icon.png`, `sightline_icon_foreground.png`, `mobile/assets/logo/sightline_logo_light.png`, `sightline_logo_dark.png` (new) | Neutral Sightline art for the home-screen icon and splash. Upstream's own art files are left untouched and unused. |
 | `mobile/.env` (written by CI, never committed) | Production endpoints, empty Sentry DSN, placeholder Mapbox token. |
-| `LICENSE` (root and per module), `mobile/modules/acs-meeting/NOTICE` | Kept (upstream has no root `NOTICE` file). A short `docs/ad-glass/NOTICE-fork.md` states this is a modified fork of MentraOS under Apache 2.0 and that it is not affiliated with Mentra. |
+| `LICENSE` (root and per module), `mobile/modules/acs-meeting/NOTICE` | Kept (upstream has no root `NOTICE` file). A short `docs/sightline/NOTICE-fork.md` states this is a modified fork of MentraOS under Apache 2.0 and that it is not affiliated with Mentra. |
 
 Left for phase 2 on purpose: Mentra wording and logos inside the app's own screens (login, onboarding, settings). Most of those screens are deleted or bypassed in phase 2, so rewording them now is wasted work. Internal identifiers such as dispatch-queue labels (`com.mentra.bluetoothsdk...`), miniapp package names (`com.mentra.camera`), the Bonjour service `_mentra-live._tcp` and the background task id `com.mentra.background-timer` are protocol or code identifiers, not branding, and stay.
 
@@ -101,7 +101,7 @@ Runners: GitHub-hosted `macos-15`, free and unmetered for public repositories. L
 
 ### 7.1 Simulator build (exists)
 
-`ad-glass-ios-simulator.yml` steps: checkout, select Xcode 26.2, Bun 1.4.0, Node 20, the fork guards and the Bluetooth SDK's update-check tests (`swift test`), `cp .env.example .env` plus the pinned values, `bun install` (which builds the workspace modules through Mentra's pre and post install scripts), `bun expo prebuild --platform ios`, the Sherpa framework script, `pod install`, then
+`sightline-ios-simulator.yml` steps: checkout, select Xcode 26.2, Bun 1.4.0, Node 20, the fork guards and the Bluetooth SDK's update-check tests (`swift test`), `cp .env.example .env` plus the pinned values, `bun install` (which builds the workspace modules through Mentra's pre and post install scripts), `bun expo prebuild --platform ios`, the Sherpa framework script, `pod install`, then
 
 ```
 xcodebuild build -workspace Mentra.xcworkspace -scheme Mentra -configuration Release \
@@ -115,17 +115,17 @@ The environment step writes `mobile/.env` from `.env.example`: production endpoi
 
 Guards in the workflow (each fails the build):
 
-- Before anything is installed: the `ad-glass.cjs` unit tests, the ring fix, the update-check early return, `telemetry: false`, and the `applyAdGlass` call in `app.config.ts`. Then the Bluetooth SDK's own update-check tests are run with `swift test` (about two minutes), which includes the two that prove the early return works.
+- Before anything is installed: the `sightline.cjs` unit tests, the ring fix, the update-check early return, `telemetry: false`, and the `applySightline` call in `app.config.ts`. Then the Bluetooth SDK's own update-check tests are run with `swift test` (about two minutes), which includes the two that prove the early return works.
 - On `.env`: every pinned value is set exactly once, to exactly the value the job pins.
 - On the generated Xcode project, a few minutes in: display name, `CFBundleName`, bundle ID, `MentraBluetoothSdkAnalyticsDisabled = true`, `FIREBASE_ANALYTICS_COLLECTION_ENABLED = false`, no permission prompt naming Mentra (other than the "Mentra Live" glasses) or `$(PRODUCT_NAME)`, no `GoogleService-Info` plist, no Sentry build step.
 - On the built app: the same Info.plist checks, the native version equal to the JavaScript version, all four production URLs present in `main.jsbundle`, and no Sentry DSN in `main.jsbundle`.
 
 ### 7.2 Signed archive and TestFlight (to write once secrets exist)
 
-Trigger: manual (`workflow_dispatch`) and tags `ad-glass-v*`. Same steps as 7.1 up to `pod install` (always a cold install: the signed workflow restores no caches of any kind), then:
+Trigger: manual (`workflow_dispatch`) and tags `sightline-v*`. Same steps as 7.1 up to `pod install` (always a cold install: the signed workflow restores no caches of any kind), then:
 
-1. Write the API key from `ADGLASS_ASC_KEY_P8` to a file in the runner's temp folder (deleted at the end, never echoed).
-2. `xcodebuild archive ... -destination generic/platform=iOS -allowProvisioningUpdates -authenticationKeyPath ... -authenticationKeyID ... -authenticationKeyIssuerID ... DEVELOPMENT_TEAM=$ADGLASS_APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic`. Xcode creates the cloud-managed distribution certificate, registers the App ID with its capabilities and makes the profile. No certificate is stored in GitHub.
+1. Write the API key from `SIGHTLINE_ASC_KEY_P8` to a file in the runner's temp folder (deleted at the end, never echoed).
+2. `xcodebuild archive ... -destination generic/platform=iOS -allowProvisioningUpdates -authenticationKeyPath ... -authenticationKeyID ... -authenticationKeyIssuerID ... DEVELOPMENT_TEAM=$SIGHTLINE_APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic`. Xcode creates the cloud-managed distribution certificate, registers the App ID with its capabilities and makes the profile. No certificate is stored in GitHub.
 3. `xcodebuild -exportArchive` with export options written at run time: `method app-store-connect`, `destination upload`, `signingStyle automatic`, the team ID. This uploads straight to App Store Connect.
 4. Paul opens TestFlight on the phone and installs.
 
@@ -135,10 +135,10 @@ Secrets (repository secrets, names chosen so no upstream workflow references the
 
 | Secret | Content |
 |---|---|
-| `ADGLASS_APPLE_TEAM_ID` | 10-character Team ID |
-| `ADGLASS_ASC_KEY_ID` | API key ID |
-| `ADGLASS_ASC_ISSUER_ID` | Issuer ID (a UUID) |
-| `ADGLASS_ASC_KEY_P8` | Full text of the `AuthKey_XXXXXXXXXX.p8` file |
+| `SIGHTLINE_APPLE_TEAM_ID` | 10-character Team ID |
+| `SIGHTLINE_ASC_KEY_ID` | API key ID |
+| `SIGHTLINE_ASC_ISSUER_ID` | Issuer ID (a UUID) |
+| `SIGHTLINE_ASC_KEY_P8` | Full text of the `AuthKey_XXXXXXXXXX.p8` file |
 
 The API key needs the **Admin** role: cloud-managed distribution signing is refused to lower roles unless a separate permission is granted. GitHub does not give secrets to workflows triggered from other people's forks, and nobody else can push to this repository.
 
@@ -148,12 +148,12 @@ Build numbers come from Mentra's scheme in `mobile/scripts/build-number.mjs` (de
 
 ### Edge cases
 
-- **Mentra's store app and AD Glass on the same phone.** Different bundle IDs, so both install. Both claim the `com.mentra` URL scheme in phase 1 and both will try to hold the glasses' Bluetooth connection. Rule: sign in to AD Glass with email and password, or remove the store app first; do not run both against the glasses at once.
+- **Mentra's store app and Sightline on the same phone.** Different bundle IDs, so both install. Both claim the `com.mentra` URL scheme in phase 1 and both will try to hold the glasses' Bluetooth connection. Rule: sign in to Sightline with email and password, or remove the store app first; do not run both against the glasses at once.
 - **Sign in with Apple or Google.** Mentra's Core may refuse an OAuth return for a client it does not know (unknown; cannot be checked without a signed build). Email and password does not depend on the redirect. If Paul's account has no password, he sets one in the store app first.
 - **Forced update.** The app asks Runtime for a minimum version at boot (`src/utils/cloudVersion.ts`, `src/app/index.tsx:197-235`) and blocks below it, pointing at Mentra's App Store page. Our build reports upstream's version (3.5.0 today, written into `.env` by the workflow, section 7.1), so it tracks upstream as long as we merge upstream regularly. If the check cannot reach the server there is a "Continue Anyway" button.
 - **TestFlight builds expire after 90 days.** Rebuild at least every 80 days until phase 2 is done; after that the same rule still applies to any TestFlight install.
 - **Apple membership lapses or a new agreement is unsigned.** Uploads fail with a clear error; Paul accepts the agreement at https://developer.apple.com/account and the workflow is re-run.
-- **Upstream moves.** Merge `upstream/dev` into `ad-glass/main` through a PR inside the fork (never squash), simulator build green before merge.
+- **Upstream moves.** Merge `upstream/dev` into `sightline/main` through a PR inside the fork (never squash), simulator build green before merge.
 
 ### Third-party download hosts
 
@@ -193,19 +193,19 @@ The Firebase, Google App Measurement and Sentry native libraries are still linke
 
 | What went wrong | Rollback |
 |---|---|
-| AD Glass misbehaves on the phone | Delete AD Glass, reopen the Mentra store app. The glasses and ring pair with either. Nothing on the glasses is changed by phase 1. |
-| A new build is worse than the last | In the TestFlight app choose the previous build (kept 90 days). In git, `git revert` the commit on `ad-glass/main` and rebuild. |
+| Sightline misbehaves on the phone | Delete Sightline, reopen the Mentra store app. The glasses and ring pair with either. Nothing on the glasses is changed by phase 1. |
+| A new build is worse than the last | In the TestFlight app choose the previous build (kept 90 days). In git, `git revert` the commit on `sightline/main` and rebuild. |
 | The API key may be exposed | Revoke it at https://appstoreconnect.apple.com/access/integrations/api and delete the four GitHub secrets. The key cannot spend money; it can upload builds and manage the app record. |
-| The whole idea is abandoned | Delete the app record's builds, revoke the key, delete the `ad-glass/main` branch. Nothing else depends on it. |
+| The whole idea is abandoned | Delete the app record's builds, revoke the key, delete the `sightline/main` branch. Nothing else depends on it. |
 
 ## 9. Paul's Apple-side steps (after enrolment is approved)
 
 1. **Find the Team ID.** Open https://developer.apple.com/account and scroll to "Membership details". Copy the 10-character Team ID.
-2. **Create the API key.** Open https://appstoreconnect.apple.com/access/integrations/api . If the page shows "Request Access", click it and accept. Click the "+" next to "Active", name it `ad-glass-ci`, choose access **Admin**, click Generate. Copy the **Issuer ID** (top of the page) and the **Key ID** (in the table). Click "Download" once; the `AuthKey_XXXXXXXXXX.p8` file cannot be downloaded a second time.
-3. **Add four GitHub secrets.** Open https://github.com/jpaulgayjr-stack/MentraOS/settings/secrets/actions/new four times, once per row in the table in 7.2. For `ADGLASS_ASC_KEY_P8`, open the `.p8` file in Notepad, select all, copy, paste. Do not paste any of these into a chat.
+2. **Create the API key.** Open https://appstoreconnect.apple.com/access/integrations/api . If the page shows "Request Access", click it and accept. Click the "+" next to "Active", name it `sightline-ci`, choose access **Admin**, click Generate. Copy the **Issuer ID** (top of the page) and the **Key ID** (in the table). Click "Download" once; the `AuthKey_XXXXXXXXXX.p8` file cannot be downloaded a second time.
+3. **Add four GitHub secrets.** Open https://github.com/jpaulgayjr-stack/MentraOS/settings/secrets/actions/new four times, once per row in the table in 7.2. For `SIGHTLINE_ASC_KEY_P8`, open the `.p8` file in Notepad, select all, copy, paste. Do not paste any of these into a chat.
 4. **Install TestFlight** on the iPhone: https://apps.apple.com/app/testflight/id899247664 and sign in with the same Apple ID.
 
-Later, once the rebrand is merged and before the first upload: Paul creates the app record at https://appstoreconnect.apple.com/apps ("+", New App, iOS, bundle ID `com.domingueandco.adglass`). Exact steps come with the signed workflow.
+Later, once the rebrand is merged and before the first upload: Paul creates the app record at https://appstoreconnect.apple.com/apps ("+", New App, iOS, bundle ID `com.jpaulgay.sightline`). Exact steps come with the signed workflow.
 
 ## 10. Phase 2 inventory: every Mentra host and cloud call in `mobile/`
 
@@ -243,4 +243,4 @@ Expected behaviour today with Core and Runtime unreachable (inferred from the co
 ## 11. Open questions for Paul
 
 1. How do you sign in to Mentra today: email and password, Google, or Apple? It decides whether the phase 1 login risk in section 8 applies.
-2. Is `com.domingueandco.adglass` acceptable as the permanent bundle ID? It can change freely until the App Store Connect record is created.
+2. Answered 2026-11-25: the app is Sightline and the bundle ID is `com.jpaulgay.sightline` (section 2). The prefix `com.jpaulgay` was the example offered and accepted; it can still change freely until the App Store Connect record is created.

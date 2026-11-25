@@ -1,18 +1,18 @@
-# AD Glass: prove the iOS toolchain on GitHub's free hosted macOS runner.
+# Sightline: prove the iOS toolchain on GitHub's free hosted macOS runner.
 #
 # Builds the phone app for the iOS Simulator, unsigned. No Apple account, no
 # secrets, no Mentra-owned runner. This is the phase 1 "can we build it at all"
-# gate (docs/ad-glass/spec-phase1.md). The signed archive and TestFlight upload
+# gate (docs/sightline/spec-phase1.md). The signed archive and TestFlight upload
 # live in a separate workflow that is added once the Apple team exists.
 #
 # Deliberately independent of Mentra's own workflows: those need their
 # self-hosted Mac, their match-certs repo and their Doppler / R2 secrets.
-name: AD Glass iOS simulator build
+name: Sightline iOS simulator build
 
 on:
   push:
     branches:
-      - "ad-glass/**"
+      - "sightline/**"
     paths:
       - "mobile/**"
       - "cloud-v2/packages/cloud-client/**"
@@ -22,11 +22,11 @@ on:
       - "bun.lock"
       # mobile/scripts/build-number.mjs imports it.
       - ".github/scripts/release-family.mjs"
-      - ".github/workflows/ad-glass-ios-simulator.yml"
+      - ".github/workflows/sightline-ios-simulator.yml"
   workflow_dispatch:
 
 concurrency:
-  group: ad-glass-ios-simulator-${{ github.ref }}
+  group: sightline-ios-simulator-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -97,7 +97,7 @@ jobs:
           fail() { echo "::error::$1"; failed=1; }
           sdk=mobile/modules/bluetooth-sdk/ios/Source
 
-          node --test mobile/scripts/ad-glass.test.mjs || fail "The AD Glass config tests failed"
+          node --test mobile/scripts/sightline.test.mjs || fail "The Sightline config tests failed"
 
           # The R1 ring fix must survive every upstream merge until upstream has
           # it (their PR 4981): connectByName has to re-create the controller.
@@ -118,9 +118,9 @@ jobs:
           grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/officialManifest.ts \
             || fail "officialManifest.ts no longer sets telemetry: false"
 
-          # app.config.ts must still pass its config through the AD Glass step.
-          grep -q 'applyAdGlass(' mobile/app.config.ts \
-            || fail "mobile/app.config.ts no longer calls applyAdGlass"
+          # app.config.ts must still pass its config through the Sightline step.
+          grep -q 'applySightline(' mobile/app.config.ts \
+            || fail "mobile/app.config.ts no longer calls applySightline"
 
           exit "$failed"
 
@@ -228,14 +228,14 @@ jobs:
             echo "$1 = $actual"
             [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected the boolean $2"
           }
-          expect CFBundleDisplayName "AD Glass"
-          expect CFBundleName "AD Glass"
+          expect CFBundleDisplayName "Sightline"
+          expect CFBundleName "Sightline"
           expect_bool MentraBluetoothSdkAnalyticsDisabled true
           expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
-          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.adglass"?;' Mentra.xcodeproj/project.pbxproj \
-            || fail "The Xcode project does not use the bundle id com.domingueandco.adglass"
+          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.jpaulgay\.sightline"?;' Mentra.xcodeproj/project.pbxproj \
+            || fail "The Xcode project does not use the bundle id com.jpaulgay.sightline"
 
-          # Every permission prompt names AD Glass. "Mentra Live" is a model of
+          # Every permission prompt names Sightline. "Mentra Live" is a model of
           # glasses and may stay; $(PRODUCT_NAME) and the like would be shown as
           # "Mentra". perl exits 0 only when it ran and found nothing.
           prompts="$(plutil -p "$info" | grep 'UsageDescription" =>' || true)"
@@ -260,7 +260,7 @@ jobs:
           chmod +x scripts/setup-sherpa-onnx-optional.sh
           ./scripts/setup-sherpa-onnx-optional.sh
 
-      # No pod cache, on purpose (docs/ad-glass/spec-phase1.md, section 8): a
+      # No pod cache, on purpose (docs/sightline/spec-phase1.md, section 8): a
       # restored Pods folder is state the source no longer describes.
       - name: CocoaPods
         working-directory: mobile/ios
@@ -308,9 +308,9 @@ jobs:
             [ "$actual" = "$2" ] || fail "$1 is '$actual', expected the boolean $2"
           }
           # Identity: ours, not Mentra's.
-          expect CFBundleIdentifier "com.domingueandco.adglass"
-          expect CFBundleDisplayName "AD Glass"
-          expect CFBundleName "AD Glass"
+          expect CFBundleIdentifier "com.jpaulgay.sightline"
+          expect CFBundleDisplayName "Sightline"
+          expect CFBundleName "Sightline"
           # The native version and the version the JavaScript reports agree.
           expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
           echo "build $(plist CFBundleVersion)"
@@ -323,7 +323,7 @@ jobs:
             fail "A Firebase GoogleService-Info plist is in the app bundle"
           fi
 
-          # Every permission prompt names AD Glass ("Mentra Live" is a model of
+          # Every permission prompt names Sightline ("Mentra Live" is a model of
           # glasses and may stay).
           prompts="$(plutil -p "$app/Info.plist" | grep 'UsageDescription" =>' || true)"
           echo "$prompts"
