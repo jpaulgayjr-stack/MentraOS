@@ -1,0 +1,357 @@
+# Sightline: signed archive and TestFlight upload.
+#
+# NOT RUN YET. It needs Paul's Apple Developer team and four repository secrets
+# (docs/sightline/spec-phase1.md, sections 7.2 and 9). Until they exist the
+# first step stops with a message that names what is missing. Nothing in this
+# file has been proven against Apple: expect the first real run to need fixes.
+#
+# How a build is shipped: push a tag named sightline-build-<anything> that
+# points at a commit on sightline/main, for example
+#   git tag sightline-build-2026-12-01 origin/sightline/main
+#   git push origin sightline-build-2026-12-01
+# A tag is used because "Run workflow" (workflow_dispatch) only works for
+# workflows on the repository's default branch, which is upstream's `dev` here.
+#
+# What it will not do:
+#   - ship a commit that is not on sightline/main;
+#   - ship a commit whose guarded simulator build is not green (identity,
+#     telemetry, backend and ring-fix guards live in sightline-ios-simulator.yml
+#     and are deliberately not copied here);
+#   - ship with a build environment that differs from the simulator workflow's
+#     (mobile/scripts/sightline-workflows.test.mjs compares the two files).
+#
+# Signing uses Xcode's cloud-managed certificates through an App Store Connect
+# API key. No certificate or profile is stored in GitHub. The key is written to
+# the runner's temp folder and deleted at the end of the job.
+name: Sightline iOS TestFlight
+
+on:
+  push:
+    tags:
+      - "sightline-build-*"
+  workflow_dispatch:
+
+# One upload at a time, and never cancel one that is talking to Apple.
+concurrency:
+  group: sightline-ios-testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  testflight:
+    name: Signed archive and TestFlight upload
+    runs-on: macos-15
+    timeout-minutes: 180
+    env:
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      # Must match sightline-ios-simulator.yml (checked by a step below).
+      CLOUD_CORE: https://core.us-west-2.mentraglass.com
+      CLOUD_RUNTIME: https://runtime.us-west-2.mentraglass.com
+      CLOUD_MINIAPPS: https://miniapps.mentraglass.com/
+      CLOUD_DIRECTORY: https://api.apps.mentraglass.com/
+      # Read by mobile/scripts/sightline.cjs at prebuild: the team that signs.
+      SIGHTLINE_APPLE_TEAM_ID: ${{ secrets.SIGHTLINE_APPLE_TEAM_ID }}
+
+    steps:
+      - name: Preconditions (secrets, branch, green simulator build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASC_KEY_ID: ${{ secrets.SIGHTLINE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SIGHTLINE_ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.SIGHTLINE_ASC_KEY_P8 }}
+        run: |
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+
+          # Names only, never values.
+          [ -n "$SIGHTLINE_APPLE_TEAM_ID" ] || fail "Repository secret SIGHTLINE_APPLE_TEAM_ID is not set"
+          [ -n "$ASC_KEY_ID" ] || fail "Repository secret SIGHTLINE_ASC_KEY_ID is not set"
+          [ -n "$ASC_ISSUER_ID" ] || fail "Repository secret SIGHTLINE_ASC_ISSUER_ID is not set"
+          [ -n "$ASC_KEY_P8" ] || fail "Repository secret SIGHTLINE_ASC_KEY_P8 is not set"
+          if [ -n "$SIGHTLINE_APPLE_TEAM_ID" ] && ! [[ "$SIGHTLINE_APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            fail "SIGHTLINE_APPLE_TEAM_ID is not a 10-character Apple team id"
+          fi
+          if [ -n "$ASC_KEY_ID" ] && ! [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]{8,12}$ ]]; then
+            fail "SIGHTLINE_ASC_KEY_ID is not an App Store Connect key id"
+          fi
+          if [ -n "$ASC_KEY_P8" ] && ! printf '%s' "$ASC_KEY_P8" | grep -q -- "-----BEGIN PRIVATE KEY-----"; then
+            fail "SIGHTLINE_ASC_KEY_P8 does not look like the text of an AuthKey .p8 file"
+          fi
+
+          # Only commits that are on sightline/main are shipped. "identical" and
+          # "behind" both mean this commit is main's tip or an ancestor of it.
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/sightline/main...$GITHUB_SHA" --jq .status || echo unknown)"
+          echo "This commit compared with sightline/main: $status"
+          case "$status" in
+            identical|behind) ;;
+            *) fail "Commit $GITHUB_SHA is not on sightline/main (compare status: $status)" ;;
+          esac
+
+          # The guards live in the simulator workflow: require its green run for
+          # exactly this commit.
+          green="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/sightline-ios-simulator.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" --jq .total_count || echo 0)"
+          echo "Green simulator builds for this commit: $green"
+          [ "$green" -ge 1 ] 2>/dev/null || fail "No green 'Sightline iOS simulator build' run exists for commit $GITHUB_SHA"
+
+          exit "$failed"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build environment matches the simulator workflow
+        run: node --test mobile/scripts/sightline-workflows.test.mjs
+
+      - name: Select Xcode
+        run: |
+          echo "BUILD_LOG=$RUNNER_TEMP/xcodebuild.log" >> "$GITHUB_ENV"
+          ls -d /Applications/Xcode*.app
+          # Mentra builds with Xcode 26.2. Prefer it, then the newest 26.x on
+          # the image, then whatever the image defaults to.
+          pick=""
+          if [ -d /Applications/Xcode_26.2.app ]; then
+            pick=/Applications/Xcode_26.2.app
+          else
+            pick="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1 || true)"
+          fi
+          if [ -n "$pick" ]; then sudo xcode-select -s "$pick/Contents/Developer"; fi
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i simulator || true
+          df -h /
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Tool versions
+        run: |
+          bun --version
+          node --version
+          ruby --version
+          pod --version
+
+      - name: Environment file
+        working-directory: mobile
+        run: |
+          # .env.example carries only public placeholders (a dummy Mapbox token,
+          # an empty Sentry DSN). Nothing secret is needed to compile.
+          cp .env.example .env
+
+          # The version the app's JavaScript reports. Without it the app opens
+          # on an "App Version Missing" screen and never runs the cloud's
+          # minimum-version check. Upstream sets it in a script CI does not run.
+          version="$(node -p "require('../package.json').version")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json version '$version' is not a plain x.y.z version"; exit 1
+          fi
+
+          for pinned in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY"; do
+            if [ -z "$pinned" ]; then echo "::error::A pinned backend URL (CLOUD_*) is empty"; exit 1; fi
+          done
+
+          sed \
+            -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_CORE_URL=.*|EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_RUNTIME_URL=.*|EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME|" \
+            -e "s|^EXPO_PUBLIC_MINIAPPS_URL=.*|EXPO_PUBLIC_MINIAPPS_URL=$CLOUD_MINIAPPS|" \
+            -e "s|^EXPO_PUBLIC_DIRECTORY_URL=.*|EXPO_PUBLIC_DIRECTORY_URL=$CLOUD_DIRECTORY|" \
+            .env > .env.tmp
+          mv .env.tmp .env
+          {
+            echo ""
+            echo "EXPO_PUBLIC_MENTRAOS_VERSION=$version"
+            echo "EXPO_PUBLIC_BUILD_COMMIT=${GITHUB_SHA:0:9}"
+            echo "EXPO_PUBLIC_BUILD_BRANCH=$GITHUB_REF_NAME"
+            echo "EXPO_PUBLIC_BUILD_USER=github-actions"
+            echo "EXPO_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%d_%H-%M)"
+          } >> .env
+
+          # Each value must be set exactly once, to exactly what this job pins.
+          # A renamed or duplicated line in upstream's .env.example fails here
+          # instead of shipping an app that talks to the wrong cloud.
+          failed=0
+          want() { # name, value
+            if [ "$(grep -c "^$1=" .env)" != 1 ] || ! grep -q -x -F "$1=$2" .env; then
+              echo "::error::.env must set $1 exactly once, to '$2'"; failed=1
+            fi
+          }
+          want EXPO_PUBLIC_BUILD_ENV prod
+          want EXPO_PUBLIC_CLOUD_CORE_URL "$CLOUD_CORE"
+          want EXPO_PUBLIC_CLOUD_RUNTIME_URL "$CLOUD_RUNTIME"
+          want EXPO_PUBLIC_MINIAPPS_URL "$CLOUD_MINIAPPS"
+          want EXPO_PUBLIC_DIRECTORY_URL "$CLOUD_DIRECTORY"
+          want EXPO_PUBLIC_MENTRAOS_VERSION "$version"
+          # No crash reporting to anyone: the DSN must stay empty.
+          want EXPO_PUBLIC_SENTRY_DSN ""
+          [ "$failed" = 0 ] || exit 1
+
+          # Xcode script phases (the JS bundler) inherit this job's environment.
+          grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' .env >> "$GITHUB_ENV"
+
+      - name: Install JavaScript dependencies
+        working-directory: mobile
+        run: |
+          # mobile's preinstall script is run with zx before node_modules exists.
+          bun add -g zx
+          bun install --no-frozen-lockfile
+
+      - name: Expo prebuild (generate the Xcode project)
+        working-directory: mobile
+        run: |
+          rm -rf ios
+          bun expo prebuild --platform ios
+
+      - name: Sherpa on-device speech framework
+        working-directory: mobile
+        run: |
+          chmod +x scripts/setup-sherpa-onnx-optional.sh
+          ./scripts/setup-sherpa-onnx-optional.sh
+
+      - name: CocoaPods
+        working-directory: mobile/ios
+        run: pod install
+
+      - name: App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.SIGHTLINE_ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.SIGHTLINE_ASC_KEY_P8 }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          key="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
+          echo "ARCHIVE_PATH=$RUNNER_TEMP/Sightline.xcarchive" >> "$GITHUB_ENV"
+
+      - name: Archive (signed, cloud-managed certificate)
+        working-directory: mobile/ios
+        env:
+          ASC_KEY_ID: ${{ secrets.SIGHTLINE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SIGHTLINE_ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          # The app target carries our team from prebuild (SIGHTLINE_APPLE_TEAM_ID).
+          # -allowProvisioningUpdates lets Xcode create the distribution
+          # certificate, register the App ID's capabilities and make the profile.
+          xcodebuild archive \
+            -workspace Mentra.xcworkspace \
+            -scheme Mentra \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            2>&1 | tee "$BUILD_LOG" \
+            | grep --line-buffered -E "error:|fatal error|ARCHIVE SUCCEEDED|ARCHIVE FAILED|\*\* |^note: Run script" || true
+          # grep's exit status is not the build's: read the verdict from the log.
+          grep -q "ARCHIVE SUCCEEDED" "$BUILD_LOG"
+
+      - name: Verify the archived app before it leaves the runner
+        run: |
+          app="$ARCHIVE_PATH/Products/Applications/Mentra.app"
+          test -d "$app"
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist" 2>/dev/null || echo "(missing)"; }
+          expect() { # name, wanted
+            actual="$(plist "$1")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual', expected '$2'"
+          }
+          expect CFBundleIdentifier "com.jpaulgay.sightline"
+          expect CFBundleDisplayName "Sightline"
+          expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
+          analytics="$(plutil -extract MentraBluetoothSdkAnalyticsDisabled raw -expect bool -o - "$app/Info.plist" 2>/dev/null || echo "(missing or not a boolean)")"
+          echo "MentraBluetoothSdkAnalyticsDisabled = $analytics"
+          [ "$analytics" = "true" ] || fail "The Bluetooth SDK's analytics are not disabled in the archived app"
+          if find "$app" -name 'GoogleService-Info*.plist' | grep -q .; then
+            fail "A Firebase GoogleService-Info plist is in the archived app"
+          fi
+          test -f "$app/main.jsbundle" || fail "main.jsbundle is missing from the archived app"
+
+          # Signed for our team, not Mentra's.
+          profile="$RUNNER_TEMP/embedded.plist"
+          if security cms -D -i "$app/embedded.mobileprovision" > "$profile" 2>/dev/null; then
+            team="$(/usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" "$profile" 2>/dev/null || echo "(missing)")"
+            [ "$team" = "$SIGHTLINE_APPLE_TEAM_ID" ] || fail "The archive is not signed for the Sightline team"
+          else
+            fail "The archived app has no readable provisioning profile"
+          fi
+          echo "BUILD_NUMBER=$(plist CFBundleVersion)" >> "$GITHUB_ENV"
+          exit "$failed"
+
+      - name: Export and upload to App Store Connect (TestFlight)
+        env:
+          ASC_KEY_ID: ${{ secrets.SIGHTLINE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SIGHTLINE_ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          options="$RUNNER_TEMP/ExportOptions.plist"
+          # PlistBuddy builds the file, so no value is pasted into XML by hand.
+          rm -f "$options"
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$options" >/dev/null; }
+          pb "Add :method string app-store-connect"
+          pb "Add :destination string upload"
+          pb "Add :teamID string $SIGHTLINE_APPLE_TEAM_ID"
+          pb "Add :signingStyle string automatic"
+          pb "Add :manageAppVersionAndBuildNumber bool false"
+          pb "Add :uploadSymbols bool true"
+          # Internal testers only: this build can never be submitted for sale.
+          pb "Add :testFlightInternalTestingOnly bool true"
+          plutil -lint "$options"
+
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$options" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee "$RUNNER_TEMP/export.log"
+          grep -q "EXPORT SUCCEEDED" "$RUNNER_TEMP/export.log"
+          {
+            echo "### Sightline $EXPO_PUBLIC_MENTRAOS_VERSION (build $BUILD_NUMBER) was uploaded to App Store Connect"
+            echo ""
+            echo "Commit ${GITHUB_SHA:0:9}. Apple processes a build for 5 to 30 minutes before it appears in the TestFlight app."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Delete the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+      - name: Show the end of the logs on failure
+        if: failure()
+        run: |
+          for log in "$BUILD_LOG" "$RUNNER_TEMP/export.log"; do
+            if [ -f "$log" ]; then
+              echo "=== $log"
+              grep -n -E "error:|fatal error" "$log" | head -100 || true
+              tail -120 "$log"
+            fi
+          done
+
+      - name: Upload the build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/xcodebuild.log
+            ${{ runner.temp }}/export.log
+          if-no-files-found: ignore
+          retention-days: 7
