@@ -23,6 +23,7 @@ const SHARED_STEPS = [
   "Select Xcode",
   "Setup Bun",
   "Setup Node.js",
+  "Tool versions",
   "Environment file",
   "Install JavaScript dependencies",
   "Expo prebuild (generate the Xcode project)",
@@ -40,6 +41,19 @@ function step(workflow, name) {
   while (lines.at(-1).trim() === "" || lines.at(-1).trimStart().startsWith("#")) lines.pop()
   return lines.join("\n")
 }
+
+// Simulator steps that check or report and leave the app's source and project as they found them.
+const VERIFY_ONLY_STEPS = [
+  "Fork guards (config tests, ring fix, telemetry switches)",
+  "Bluetooth SDK tests for the fork's change",
+  "Verify the generated project",
+  "Build for the iOS Simulator (unsigned)",
+  "Verify the built app",
+  "Show the end of the build log on failure",
+  "Upload the full build log",
+]
+
+const stepNames = (workflow) => [...workflow.matchAll(/^ {6}- name: (.*)$/gm)].map((match) => match[1].trim())
 
 const jobEnvironment = (workflow) => workflow.split("\n").filter((line) => /^ {6}[A-Z][A-Z0-9_]*: /.test(line))
 
@@ -61,6 +75,17 @@ test("the only job-level setting the TestFlight job adds is the signing team", (
   assert.deepEqual(added, ["      SIGHTLINE_APPLE_TEAM_ID: ${{ secrets.SIGHTLINE_APPLE_TEAM_ID }}"])
 })
 
-test("the simulator workflow still names the steps this comparison relies on", () => {
-  for (const name of SHARED_STEPS) assert.ok(simulator.includes(`      - name: ${name}\n`), name)
+test("every simulator step is either shared with the TestFlight job or known to leave the app alone", () => {
+  // A new step in the simulator job lands here: add it to SHARED_STEPS (and to
+  // the TestFlight workflow) if it changes what gets built, else to VERIFY_ONLY_STEPS.
+  const unaccounted = stepNames(simulator).filter(
+    (name) => !SHARED_STEPS.includes(name) && !VERIFY_ONLY_STEPS.includes(name),
+  )
+  assert.deepEqual(unaccounted, [])
+})
+
+test("the shared steps run in the same order in both jobs", () => {
+  const order = (workflow) => stepNames(workflow).filter((name) => SHARED_STEPS.includes(name))
+  assert.deepEqual(order(simulator), SHARED_STEPS)
+  assert.deepEqual(order(testflight), SHARED_STEPS)
 })

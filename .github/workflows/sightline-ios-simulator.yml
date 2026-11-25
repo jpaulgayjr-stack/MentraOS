@@ -23,6 +23,8 @@ on:
       # mobile/scripts/build-number.mjs imports it.
       - ".github/scripts/release-family.mjs"
       - ".github/workflows/sightline-ios-simulator.yml"
+      # It ships only commits this workflow has built green.
+      - ".github/workflows/sightline-ios-testflight.yml"
   workflow_dispatch:
 
 concurrency:

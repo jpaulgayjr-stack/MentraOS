@@ -78,8 +78,13 @@ jobs:
           if [ -n "$ASC_KEY_ID" ] && ! [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]{8,12}$ ]]; then
             fail "SIGHTLINE_ASC_KEY_ID is not an App Store Connect key id"
           fi
-          if [ -n "$ASC_KEY_P8" ] && ! printf '%s' "$ASC_KEY_P8" | grep -q -- "-----BEGIN PRIVATE KEY-----"; then
-            fail "SIGHTLINE_ASC_KEY_P8 does not look like the text of an AuthKey .p8 file"
+          if [ -n "$ASC_ISSUER_ID" ] && ! [[ "$ASC_ISSUER_ID" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]]; then
+            fail "SIGHTLINE_ASC_ISSUER_ID is not an App Store Connect issuer id"
+          fi
+          if [ -n "$ASC_KEY_P8" ]; then
+            printf '%s' "$ASC_KEY_P8" | grep -q -- "-----BEGIN PRIVATE KEY-----" \
+              && printf '%s' "$ASC_KEY_P8" | grep -q -- "-----END PRIVATE KEY-----" \
+              || fail "SIGHTLINE_ASC_KEY_P8 is not the whole text of an AuthKey .p8 file (both the BEGIN and END lines)"
           fi
 
           # Only commits that are on sightline/main are shipped. "identical" and
@@ -95,9 +100,18 @@ jobs:
           # exactly this commit.
           green="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/sightline-ios-simulator.yml/runs?head_sha=$GITHUB_SHA&status=success&per_page=1" --jq .total_count || echo 0)"
           echo "Green simulator builds for this commit: $green"
-          [ "$green" -ge 1 ] 2>/dev/null || fail "No green 'Sightline iOS simulator build' run exists for commit $GITHUB_SHA"
+          [ "$green" -ge 1 ] 2>/dev/null || fail "No green 'Sightline iOS simulator build' run exists for commit $GITHUB_SHA. If that build is still running, wait for it to finish and re-run this job. A commit that changed only documentation has no such build: tag a commit that has one."
 
           exit "$failed"
+
+      - name: Build number
+        run: |
+          # Mentra's number for a non-release build wraps every 4.9 days
+          # (.github/scripts/release-family.mjs), and Apple refuses a build whose
+          # number is not higher than the last upload. Minutes since 1970 only
+          # go up, and a re-run of this job gets a new one. Read at prebuild and
+          # again by Xcode's bundling step (mobile/scripts/build-number.mjs).
+          echo "MENTRAOS_PINNED_BUILD_NUMBER=$(( $(date -u +%s) / 60 ))" >> "$GITHUB_ENV"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -230,7 +244,8 @@ jobs:
           umask 077
           mkdir -p "$RUNNER_TEMP/asc"
           key="$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
-          printf '%s\n' "$ASC_KEY_P8" > "$key"
+          # A key pasted from Windows Notepad can carry CR line endings.
+          printf '%s\n' "$ASC_KEY_P8" | tr -d '\r' > "$key"
           echo "ASC_KEY_PATH=$key" >> "$GITHUB_ENV"
           echo "ARCHIVE_PATH=$RUNNER_TEMP/Sightline.xcarchive" >> "$GITHUB_ENV"
 
@@ -254,11 +269,10 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            CODE_SIGN_STYLE=Automatic \
             2>&1 | tee "$BUILD_LOG" \
-            | grep --line-buffered -E "error:|fatal error|ARCHIVE SUCCEEDED|ARCHIVE FAILED|\*\* |^note: Run script" || true
-          # grep's exit status is not the build's: read the verdict from the log.
-          grep -q "ARCHIVE SUCCEEDED" "$BUILD_LOG"
+            | { grep --line-buffered -E "error:|fatal error|ARCHIVE SUCCEEDED|ARCHIVE FAILED|\*\* |^note: Run script" || true; }
+          # With pipefail the step's status is xcodebuild's: the filter in braces
+          # cannot fail, and cannot hide a failure either.
 
       - name: Verify the archived app before it leaves the runner
         run: |
@@ -274,7 +288,13 @@ jobs:
           }
           expect CFBundleIdentifier "com.jpaulgay.sightline"
           expect CFBundleDisplayName "Sightline"
+          expect CFBundleName "Sightline"
           expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
+          # The number this job pinned is the one that was built in.
+          expect CFBundleVersion "$MENTRAOS_PINNED_BUILD_NUMBER"
+          firebase="$(plutil -extract FIREBASE_ANALYTICS_COLLECTION_ENABLED raw -expect bool -o - "$app/Info.plist" 2>/dev/null || echo "(missing or not a boolean)")"
+          echo "FIREBASE_ANALYTICS_COLLECTION_ENABLED = $firebase"
+          [ "$firebase" = "false" ] || fail "Firebase collection is not switched off in the archived app"
           analytics="$(plutil -extract MentraBluetoothSdkAnalyticsDisabled raw -expect bool -o - "$app/Info.plist" 2>/dev/null || echo "(missing or not a boolean)")"
           echo "MentraBluetoothSdkAnalyticsDisabled = $analytics"
           [ "$analytics" = "true" ] || fail "The Bluetooth SDK's analytics are not disabled in the archived app"
@@ -323,7 +343,7 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             2>&1 | tee "$RUNNER_TEMP/export.log"
-          grep -q "EXPORT SUCCEEDED" "$RUNNER_TEMP/export.log"
+          # pipefail: a failed export or upload fails the step here.
           {
             echo "### Sightline $EXPO_PUBLIC_MENTRAOS_VERSION (build $BUILD_NUMBER) was uploaded to App Store Connect"
             echo ""
@@ -343,6 +363,23 @@ jobs:
               grep -n -E "error:|fatal error" "$log" | head -100 || true
               tail -120 "$log"
             fi
+          done
+
+      - name: Redact identifiers from the logs
+        # This repository is public, so its artifacts are too. xcodebuild prints
+        # its own command line and the signing team; GitHub masks them on the
+        # console but not inside an uploaded file.
+        if: always()
+        env:
+          ASC_KEY_ID: ${{ secrets.SIGHTLINE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.SIGHTLINE_ASC_ISSUER_ID }}
+        run: |
+          for log in "$BUILD_LOG" "$RUNNER_TEMP/export.log"; do
+            [ -f "$log" ] || continue
+            for value in "$ASC_KEY_ID" "$ASC_ISSUER_ID" "$SIGHTLINE_APPLE_TEAM_ID"; do
+              [ -n "$value" ] || continue
+              VALUE="$value" perl -pi -e 's/\Q$ENV{VALUE}\E/[redacted]/g' "$log"
+            done
           done
 
       - name: Upload the build logs
