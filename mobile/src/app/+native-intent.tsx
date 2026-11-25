@@ -1,7 +1,21 @@
+import {APP_SCHEME} from "@/constants/appConfig"
+import {routeForThisBuild} from "@/services/deployment/localRoutes"
 import {isMiniappInstallLinkPath} from "@/services/miniapps/miniappInstallLinks"
 
 /** The Mentra App's Universal Link and App Link hosts. */
 const LINK_HOSTS = ["apps.mentra.glass", "apps.mentraglass.com"]
+
+/** The in-app route a system link names: `/auth/start` for `<scheme>://auth/start`, or the path of a relative link. */
+function systemRoute(path: string): string {
+  if (path.startsWith("/")) return path
+  try {
+    const url = new URL(path)
+    if (url.protocol === `${APP_SCHEME}:`) return `/${url.hostname}${url.pathname}`
+    return url.pathname
+  } catch {
+    return path
+  }
+}
 
 /** Reset links are handled by DeeplinkProvider, which never takes a session from them: a signed-in person stays on
  * their screen, and a signed-out one goes to the emailed-code reset. The reset screen itself is code-only. */
@@ -12,7 +26,7 @@ function isResetPasswordLink(path: string): boolean {
   } else {
     try {
       const url = new URL(path)
-      if (url.protocol === "com.mentra:") route = `/${url.hostname}${url.pathname}`
+      if (url.protocol === `${APP_SCHEME}:`) route = `/${url.hostname}${url.pathname}`
       else if (url.protocol === "https:" && LINK_HOSTS.includes(url.hostname.replace(/\.$/, ""))) route = url.pathname
       else return false
     } catch {
@@ -27,13 +41,15 @@ function isResetPasswordLink(path: string): boolean {
  * (the install sheet opens over it), and a cold app completes its normal boot first.
  */
 export function redirectSystemPath({path, initial}: {path: string; initial: boolean}): string | null {
+  // AD Glass: a link to an account screen (sign-in, password reset, ...) boots normally instead.
+  if (routeForThisBuild(systemRoute(path)) !== systemRoute(path)) return initial ? "/" : null
   if (isResetPasswordLink(path)) return initial ? "/" : null
   if (isMiniappInstallLinkPath(path)) return initial ? "/" : null
   if (path.split(/[?#]/)[0] === "/settings") return initial ? "/" : null
   try {
     const url = new URL(path)
     if (
-      url.protocol === "com.mentra:" &&
+      url.protocol === `${APP_SCHEME}:` &&
       ["/settings", "/test/submit-incident-report", "/test/load-miniapp", "/test/permissions", "/test/request-permissions"].includes(url.hostname ? `/${url.hostname}${url.pathname}` : url.pathname)
     ) {
       return initial ? "/" : null

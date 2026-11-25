@@ -1,11 +1,13 @@
 export const AD_GLASS: Readonly<{
   appName: string
   bundleId: string
+  scheme: string
   icon: string
   adaptiveIcon: string
   splashLight: string
   splashDark: string
 }>
+export const SDK_UPDATE_CHECK_KEY: string
 export function isAdGlass(env?: NodeJS.ProcessEnv): boolean
 export function applyAdGlass<T extends Record<string, any>>(config: T, env?: NodeJS.ProcessEnv): T
 export function rebrandText<T>(value: T): T

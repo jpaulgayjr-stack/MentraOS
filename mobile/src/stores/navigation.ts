@@ -3,6 +3,9 @@ import {create} from "zustand"
 import {router} from "expo-router"
 import {StackAnimationTypes} from "react-native-screens"
 
+// AD Glass: every navigation passes through here, so this is where the account screens are kept unreachable.
+import {routeForThisBuild} from "@/services/deployment/localRoutes"
+
 export type NavigationAnimation = StackAnimationTypes | string
 
 /**
@@ -70,6 +73,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   interceptor: null,
 
   push: (path, params) => {
+    path = routeForThisBuild(path)
     if (get().interceptor?.push(path, params)) {
       console.info("NAV: push() intercepted", path)
       return
@@ -90,6 +94,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   replace: (path, params) => {
+    path = routeForThisBuild(path)
     if (get().interceptor?.replace(path, params)) {
       console.info("NAV: replace() intercepted", path)
       return
@@ -106,6 +111,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   replaceAll: (path, params) => {
+    path = routeForThisBuild(path)
     console.info("NAV: replaceAll()", path)
     get().clearHistory()
     set({history: [path], historyParams: [params]})
@@ -136,6 +142,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   },
 
   navigate: (path, params) => {
+    path = routeForThisBuild(path)
     console.info("NAV: navigate()", path)
     router.navigate({pathname: path as any, params: params as any})
   },

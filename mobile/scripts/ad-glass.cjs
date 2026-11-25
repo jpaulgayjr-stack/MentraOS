@@ -11,6 +11,9 @@
 const AD_GLASS = Object.freeze({
   appName: "AD Glass",
   bundleId: "com.domingueandco.adglass",
+  // The app's own URL scheme. Upstream's is `com.mentra`, which Mentra's
+  // sign-in returns through and which the Mentra app on the same phone claims.
+  scheme: "adglass",
   icon: "./assets/app-icons/ad_glass_icon.png",
   adaptiveIcon: "./assets/app-icons/ad_glass_icon_foreground.png",
   splashLight: "./assets/logo/ad_glass_logo_light.png",
@@ -21,6 +24,10 @@ const BLUETOOTH_SDK_PLUGIN = "./modules/bluetooth-sdk/app.plugin.js"
 const SPLASH_PLUGIN = "expo-splash-screen"
 // Build-time plugins that exist only to feed a Mentra-owned service.
 const REMOVED_PLUGINS = new Set(["@sentry/react-native/expo"])
+// The Bluetooth SDK asks Mentra Core whether it is out of date only when the
+// app's Info.plist sets this to true (BluetoothSdkUpdateCheck.swift). AD Glass
+// never does.
+const SDK_UPDATE_CHECK_KEY = "MentraBluetoothSdkUpdateCheckEnabled"
 
 function isAdGlass(env = process.env) {
   return env.AD_GLASS_VARIANT !== "off"
@@ -36,6 +43,24 @@ function rebrandText(value) {
     .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
     .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
     .replace(/\bMentra\b(?! Live)/g, AD_GLASS.appName)
+}
+
+/** Replace upstream's URL scheme with ours in the Info.plist URL types. Other schemes (msauth...) are kept. */
+function adGlassUrlTypes(urlTypes, upstreamSchemes) {
+  const types = (urlTypes ?? []).map((type) => ({
+    ...type,
+    CFBundleURLSchemes: (type.CFBundleURLSchemes ?? []).map((scheme) =>
+      upstreamSchemes.includes(scheme) ? AD_GLASS.scheme : scheme,
+    ),
+  }))
+  const schemes = types.flatMap((type) => type.CFBundleURLSchemes)
+  // Fail the build rather than ship an app that answers Mentra's links.
+  const leftover = schemes.filter((scheme) => scheme === "com.mentra" || scheme.startsWith("com.mentra."))
+  if (leftover.length > 0) {
+    throw new Error(`[ad-glass] Info.plist still registers a Mentra URL scheme: ${leftover.join(", ")}`)
+  }
+  if (!schemes.includes(AD_GLASS.scheme)) types.unshift({CFBundleURLSchemes: [AD_GLASS.scheme]})
+  return types
 }
 
 function mapValues(object, fn) {
@@ -87,20 +112,31 @@ function applyAdGlass(config, env = process.env) {
   // workflow; an unsigned build has none.
   const {appleTeamId: _upstreamTeamId, ...ios} = config.ios ?? {}
   const teamId = env.ADGLASS_APPLE_TEAM_ID?.trim()
-  const infoPlist = mapValues(ios.infoPlist ?? {}, (key, value) =>
+  const {[SDK_UPDATE_CHECK_KEY]: _sdkUpdateCheck, ...infoPlist} = mapValues(ios.infoPlist ?? {}, (key, value) =>
     /UsageDescription$/.test(key) ? rebrandText(value) : value,
   )
+  const upstreamSchemes = [config.scheme].flat().filter((scheme) => typeof scheme === "string")
+
+  // Upstream packages the Core URL of the build environment here. Nothing
+  // reads it, and AD Glass has no Core: do not ship the address.
+  const {mentraBackendTarget: _backendTarget, ...extra} = config.extra ?? {}
 
   return {
     ...config,
+    extra,
+    scheme: AD_GLASS.scheme,
     ios: {
       ...ios,
       ...(teamId ? {appleTeamId: teamId} : {}),
-      // The Xcode project keeps upstream's name; this is the name iOS reports.
-      infoPlist: {...infoPlist, CFBundleName: AD_GLASS.appName},
+      infoPlist: {
+        ...infoPlist,
+        // The Xcode project keeps upstream's name; this is the name iOS reports.
+        CFBundleName: AD_GLASS.appName,
+        CFBundleURLTypes: adGlassUrlTypes(infoPlist.CFBundleURLTypes, upstreamSchemes),
+      },
     },
     plugins: plugins.filter((plugin) => !REMOVED_PLUGINS.has(pluginName(plugin))).map(adGlassPlugin),
   }
 }
 
-module.exports = {AD_GLASS, isAdGlass, applyAdGlass, rebrandText}
+module.exports = {AD_GLASS, SDK_UPDATE_CHECK_KEY, isAdGlass, applyAdGlass, rebrandText}

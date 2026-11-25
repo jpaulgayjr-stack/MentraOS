@@ -12,6 +12,7 @@
  * `apps.mentra.glass` and the Mentra App's own scheme (`com.mentra://open?url=…`, or the dev app's
  * `com.mentra.dev://open?url=…`) are read the same way.
  */
+import {APP_SCHEME} from "@/constants/appConfig"
 import {
   isMiniappLink,
   MINIAPP_LINK_HOSTS,
@@ -24,7 +25,7 @@ import {
 export const MENTRA_APP_LINK_HOSTS: readonly string[] = MINIAPP_LINK_HOSTS
 
 /** The Mentra App's own URL scheme. */
-export const MENTRA_APP_SCHEME = "com.mentra"
+export const MENTRA_APP_SCHEME = APP_SCHEME
 
 /** The schemes the Mentra App reads miniapp links on: its own, and the dev app's. */
 const MINIAPP_LINK_SCHEMES: readonly string[] = [MENTRA_APP_SCHEME, `${MENTRA_APP_SCHEME}.dev`]

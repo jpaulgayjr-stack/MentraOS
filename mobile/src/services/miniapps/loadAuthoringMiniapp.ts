@@ -1,3 +1,4 @@
+import {APP_SCHEME} from "@/constants/appConfig"
 import {engine, SETTINGS} from "@mentra/engine"
 import {appRegistry, isDevMiniappAllowed} from "@mentra/engine-host-internal"
 
@@ -22,7 +23,7 @@ async function replaceMiniapp(link: string) {
   if (engine.settings.get(SETTINGS.super_mode.key) !== true)
     throw new Error("Enable Super Mode to load a miniapp from a script")
   const request = new URL(link)
-  if (request.protocol !== "com.mentra:" || request.hostname !== "test" || request.pathname !== "/load-miniapp") {
+  if (request.protocol !== `${APP_SCHEME}:` || request.hostname !== "test" || request.pathname !== "/load-miniapp") {
     throw new Error("Expected a Mentra miniapp authoring link")
   }
   const single = (key: string) => {
