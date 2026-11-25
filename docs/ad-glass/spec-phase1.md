@@ -101,7 +101,7 @@ Runners: GitHub-hosted `macos-15`, free and unmetered for public repositories. L
 
 ### 7.1 Simulator build (exists)
 
-`ad-glass-ios-simulator.yml` steps: checkout, select Xcode 26.2, Bun 1.4.0, Node 20, `cp .env.example .env`, `bun install` (which builds the workspace modules through Mentra's pre and post install scripts), `bun expo prebuild --platform ios`, the Sherpa framework script, `pod install`, then
+`ad-glass-ios-simulator.yml` steps: checkout, select Xcode 26.2, Bun 1.4.0, Node 20, the fork guards and the Bluetooth SDK's update-check tests (`swift test`), `cp .env.example .env` plus the pinned values, `bun install` (which builds the workspace modules through Mentra's pre and post install scripts), `bun expo prebuild --platform ios`, the Sherpa framework script, `pod install`, then
 
 ```
 xcodebuild build -workspace Mentra.xcworkspace -scheme Mentra -configuration Release \
@@ -122,7 +122,7 @@ Guards in the workflow (each fails the build):
 
 ### 7.2 Signed archive and TestFlight (to write once secrets exist)
 
-Trigger: manual (`workflow_dispatch`) and tags `ad-glass-v*`. Same steps as 7.1 up to `pod install`, then:
+Trigger: manual (`workflow_dispatch`) and tags `ad-glass-v*`. Same steps as 7.1 up to `pod install` (always a cold install: the signed workflow restores no caches of any kind), then:
 
 1. Write the API key from `ADGLASS_ASC_KEY_P8` to a file in the runner's temp folder (deleted at the end, never echoed).
 2. `xcodebuild archive ... -destination generic/platform=iOS -allowProvisioningUpdates -authenticationKeyPath ... -authenticationKeyID ... -authenticationKeyIssuerID ... DEVELOPMENT_TEAM=$ADGLASS_APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic`. Xcode creates the cloud-managed distribution certificate, registers the App ID with its capabilities and makes the profile. No certificate is stored in GitHub.
@@ -157,7 +157,14 @@ Build numbers come from Mentra's scheme in `mobile/scripts/build-number.mjs` (de
 
 ### Third-party download hosts
 
-A clean build downloads binaries from hosts we do not control: CocoaPods trunk, `nuget.org` (ONNX Runtime), `github.com` (Sherpa framework, Mapbox package, Azure Communication framework), `api.mapbox.com` (Mapbox binaries), npm. Mentra's own CI hides outages because its self-hosted Mac keeps a warm cache; a hosted runner starts cold every time. The ONNX host outage hit the first run of this workflow. Mitigation, in the workflow: the CocoaPods downloads, `mobile/ios/Pods` and `Podfile.lock` are cached in GitHub Actions, keyed on the lockfiles, the podspecs and the config files that decide the pod list, so a host outage does not stop a rebuild of unchanged dependencies. If `pod install` fails on a restored cache it is retried from a clean state. Limits, so nobody relies on it for more than it gives: GitHub deletes a cache that nothing has read for 7 days, a cache saved on one branch is not visible to another, and the Mapbox Swift packages (fetched by Xcode during the compile) and npm packages are not covered. It protects rebuilds in a busy week, not the rebuild 80 days later.
+A clean build downloads binaries from hosts we do not control: CocoaPods trunk, `nuget.org` (ONNX Runtime), `github.com` (Sherpa framework, Mapbox package, Azure Communication framework), `api.mapbox.com` (Mapbox binaries), npm. Mentra's own CI hides outages because its self-hosted Mac keeps a warm cache; a hosted runner starts cold every time. The ONNX host outage hit the first run of this workflow. **Decision (2026-11-25): no pod cache.** A cache of `mobile/ios/Pods` and `Podfile.lock` in GitHub Actions was built, ran once, and was removed after review, because it adds more ways to fail than it removes:
+
+- GitHub deletes a cache nothing has read for 7 days, so it is gone exactly when it would matter (the rebuild weeks later).
+- `Podfile.lock` exists only inside the cache (the `ios` folder is generated), so a restored build pins versions a cold build would not, and a change to `mobile/patches` or to React Native's download checks can leave a stale Hermes engine in a restored `Pods` folder. The app CI verified would then not be the app a cold build produces.
+- React Native's pod scripts ask Maven Central on every `pod install` whether prebuilt binaries exist and silently fall back to a source build when it does not answer; a cache does not remove that dependency.
+- Anything that can run a workflow on this branch or on the default branch (`dev`, upstream's mirror) can write the cache a later build restores. That is tolerable for an unsigned simulator build and not for a signed one.
+
+The gain would have been about 4 minutes of a 41-minute build. If a download host fails, the fix is the one used for ONNX Runtime: pin that one binary from another official source, by checksum. One observation for later: the Sherpa step downloads a framework from `github.com` on every run, while the framework the pod links is already committed in the repository; whether the step is needed at all is a phase 2 question.
 
 ### The three most likely silent failures
 

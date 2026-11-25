@@ -187,8 +187,11 @@ final class BluetoothSdkUpdateCheckTests: XCTestCase {
                 completion(nil)
             }
         ) { _, _ in }
-        check.start()
-        BluetoothSdkUpdateCheck.awaitIdle()
+        // start() holds the check weakly; keep it alive until its queued work has run.
+        withExtendedLifetime(check) {
+            check.start()
+            BluetoothSdkUpdateCheck.awaitIdle()
+        }
         return calls.values.count
     }
 

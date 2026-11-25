@@ -127,7 +127,16 @@ jobs:
       - name: Bluetooth SDK tests for the fork's change
         # Proves, by running it, that an app with the SDK's analytics disabled
         # sends no update check to Mentra, and that the test can tell.
-        run: swift test --package-path mobile/modules/bluetooth-sdk --filter BluetoothSdkUpdateCheckTests
+        run: |
+          set -o pipefail
+          swift test --package-path mobile/modules/bluetooth-sdk --filter BluetoothSdkUpdateCheckTests 2>&1 \
+            | tee "$RUNNER_TEMP/sdk-tests.log"
+          # swift test also succeeds when the filter matches nothing, so name
+          # the fork's two tests: both must have run and passed.
+          for name in testAppThatDisablesSdkAnalyticsSendsNoUpdateCheck testAppThatKeepsSdkAnalyticsStillSendsTheUpdateCheck; do
+            grep -q -F "$name]' passed" "$RUNNER_TEMP/sdk-tests.log" \
+              || { echo "::error::The Bluetooth SDK test $name did not run and pass"; exit 1; }
+          done
 
       - name: Environment file
         working-directory: mobile
@@ -198,9 +207,7 @@ jobs:
         working-directory: mobile
         run: |
           rm -rf ios
-          # --no-install: CocoaPods runs in its own step below, after the cache
-          # is restored. JavaScript dependencies are already installed.
-          bun expo prebuild --platform ios --no-install
+          bun expo prebuild --platform ios
 
       - name: Verify the generated project
         working-directory: mobile/ios
@@ -253,47 +260,11 @@ jobs:
           chmod +x scripts/setup-sherpa-onnx-optional.sh
           ./scripts/setup-sherpa-onnx-optional.sh
 
-      # A cold build downloads pods from hosts we do not control (CocoaPods
-      # trunk, nuget.org, github.com, Maven Central). With an unchanged
-      # dependency set this restores them instead, so an outage at one of those
-      # hosts does not stop a rebuild. GitHub drops a cache that nothing has
-      # read for 7 days, and a cache is only visible to the branch that saved
-      # it, so this covers rebuilds in a busy week, not the 80-day rebuild.
-      - name: Restore the CocoaPods cache
-        id: pods-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            mobile/ios/Pods
-            mobile/ios/Podfile.lock
-            ~/Library/Caches/CocoaPods
-            ~/.cocoapods
-          key: ad-glass-pods-v1-${{ runner.os }}-${{ hashFiles('bun.lock', 'mobile/bun.lock', 'mobile/package.json', 'mobile/app.config.ts', 'mobile/scripts/ad-glass.cjs', 'mobile/podspecs/*.podspec', 'mobile/modules/*/ios/*.podspec', 'mobile/plugins/**') }}
-
+      # No pod cache, on purpose (docs/ad-glass/spec-phase1.md, section 8): a
+      # restored Pods folder is state the source no longer describes.
       - name: CocoaPods
         working-directory: mobile/ios
-        env:
-          PODS_CACHE_HIT: ${{ steps.pods-cache.outputs.cache-hit }}
-        run: |
-          echo "pods cache hit: ${PODS_CACHE_HIT:-false}"
-          if ! pod install; then
-            if [ "$PODS_CACHE_HIT" != "true" ]; then exit 1; fi
-            # A restored cache must never be the reason a build fails.
-            echo "::warning::pod install failed on the restored cache; retrying from a clean state"
-            rm -rf Pods Podfile.lock
-            pod install
-          fi
-
-      - name: Save the CocoaPods cache
-        if: steps.pods-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            mobile/ios/Pods
-            mobile/ios/Podfile.lock
-            ~/Library/Caches/CocoaPods
-            ~/.cocoapods
-          key: ${{ steps.pods-cache.outputs.cache-primary-key }}
+        run: pod install
 
       - name: Build for the iOS Simulator (unsigned)
         working-directory: mobile/ios
