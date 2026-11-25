@@ -4,6 +4,7 @@
 // MENTRAOS_BUILD_NAME suffixes applicationId, Gradle reuses a stale
 // ReactNativeApplicationEntryPoint that imports the wrong BuildConfig.
 const {resolveAppTrack} = require("./app-track.cjs")
+const {AD_GLASS, isAdGlass} = require("./ad-glass.cjs")
 
 const VARIANT_RE = /^[a-zA-Z][a-zA-Z0-9_ ]*$/
 
@@ -12,6 +13,8 @@ function resolveAndroidPackageName({
   buildName = process.env.MENTRAOS_BUILD_NAME,
   track = resolveAppTrack(),
 } = {}) {
+  // AD Glass is one app with one id: no region, track or build-name variants.
+  if (isAdGlass()) return AD_GLASS.bundleId
   const base =
     region === "china" ? "com.mentra.mentra.cn" : track === "dev" ? "com.mentra.mentra.dev" : "com.mentra.mentra"
   const variantName = typeof buildName === "string" ? buildName.trim() : ""
