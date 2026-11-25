@@ -68,6 +68,7 @@ import {
   type SpeechProcessing,
   type TranscriptionRoutingState,
 } from "./TranscriptionRouting"
+import {speechProcessingRefusal, speechProcessingWithoutCloud} from "./cloudless"
 import {
   addStreamProcessing,
   transcriptionRegistrations,
@@ -286,14 +287,10 @@ function locationRateRank(rate: string | null | undefined): number {
 
 /** Why this deployment refuses a transcription listener's processing, or null. */
 function speechProcessingDisabled(processing: SpeechProcessing): string | null {
-  const cloud = isFeatureEnabled("cloudSpeech")
-  const onDevice = isFeatureEnabled("onDeviceSpeech")
-  if (processing === "localOnly" && !onDevice) return "On-device speech is disabled by this deployment"
-  if (processing === "preferCloud" && !cloud) return "Cloud speech is disabled by this deployment"
-  if (processing === "preferLocal" && !cloud && !onDevice) {
-    return "Cloud and on-device speech are disabled by this deployment"
-  }
-  return null
+  return speechProcessingRefusal(processing, {
+    cloud: isFeatureEnabled("cloudSpeech"),
+    onDevice: isFeatureEnabled("onDeviceSpeech"),
+  })
 }
 
 const LOG_TAG = "LOCAL_MINIAPP"
@@ -2828,7 +2825,8 @@ class LocalMiniappRuntime {
 
       const modelId = typeof payload.model_id === "string" ? payload.model_id : undefined
       // `processing` wins; SDKs before it send only `forceLocal`.
-      const processing = readSpeechProcessing(payload)
+      // AD Glass: where cloud speech is off the request is on-device only, so no branch below can pick the cloud.
+      const processing = speechProcessingWithoutCloud(readSpeechProcessing(payload), isFeatureEnabled("cloudSpeech"))
       const cloudConnected = cloudClientService.isConnected()
       console.log(
         `${LOG_TAG}: TTS decision for ${packageName}: cloudConnected=${cloudConnected}, runtimeTts=yes, offlineVoice=${offlineSupportsVoice}, processing=${processing}`,
