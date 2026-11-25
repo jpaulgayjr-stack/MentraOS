@@ -70,7 +70,7 @@ it("embeds a complete schema-v1 official manifest and respects build environment
   expect(manifest.auth).toEqual({mode: "mentra-account"})
   expect(manifest.glasses.allowedModelsOverride).toBeNull()
   expect(manifest.features.runtimeRealtimeSession).toBe(true)
-  // AD Glass: upstream ships true; this fork never starts Mentra's collection.
+  // Sightline: upstream ships true; this fork never starts Mentra's collection.
   expect(manifest.telemetry).toBe(false)
 })
 

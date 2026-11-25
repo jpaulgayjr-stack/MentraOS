@@ -1,4 +1,4 @@
-# AD Glass: ONNX Runtime C library for iOS, taken from Microsoft's NuGet package.
+# Sightline: ONNX Runtime C library for iOS, taken from Microsoft's NuGet package.
 #
 # Why this file exists: the CocoaPods trunk spec for onnxruntime-c downloads
 # https://download.onnxruntime.ai/pod-archive-onnxruntime-c-<version>.zip, and
