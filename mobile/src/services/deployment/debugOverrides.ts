@@ -2,6 +2,7 @@ import {engine, SETTINGS} from "@mentra/engine"
 
 import {devServerHost, METRO_AUTO} from "@/utils/cloudClient/devHost"
 
+import {isCloudless} from "./adGlassManifest"
 import type {ActiveDeployment, DeploymentManifest} from "./types"
 
 export function deploymentDebugScope(deployment: ActiveDeployment): string {
@@ -29,6 +30,9 @@ function resolveOverride(override: string | undefined, baseline: string | null, 
 }
 
 export function resolveDeploymentManifest(deployment: ActiveDeployment): DeploymentManifest {
+  // AD Glass: a deployment with no servers stays that way. A saved debug URL
+  // must not be able to point it at one.
+  if (isCloudless(deployment.manifest)) return deployment.manifest
   const overrides = deploymentDebugOverrides(deployment)
   return {
     ...deployment.manifest,
@@ -41,6 +45,8 @@ export function resolveDeploymentManifest(deployment: ActiveDeployment): Deploym
 
 /** Whether saving `core` as the override would point this deployment at a different Core. */
 export function coreOverrideChangesCore(deployment: ActiveDeployment, core: string): boolean {
+  // AD Glass: an override is never applied to a deployment with no servers, so it changes nothing.
+  if (isCloudless(deployment.manifest)) return false
   const next = resolveOverride(core.trim() || undefined, deployment.manifest.services.coreUrl, 3000)
   return next !== resolveDeploymentManifest(deployment).services.coreUrl
 }

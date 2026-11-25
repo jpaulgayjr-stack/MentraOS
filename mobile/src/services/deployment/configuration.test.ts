@@ -11,6 +11,8 @@ import {deploymentManifestSchema} from "./schema"
 import {deploymentStore, DeploymentStore, type DeploymentStorage} from "./store"
 import type {ActiveDeployment, DeploymentCandidate} from "./types"
 
+// AD Glass embeds a deployment with no servers; this suite is about one that has them.
+jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
 jest.mock("@/utils/cloudClient/devHost", () => ({METRO_AUTO: "metro-auto", devServerHost: jest.fn()}))
 
 const originalCore = process.env.EXPO_PUBLIC_CLOUD_CORE_URL

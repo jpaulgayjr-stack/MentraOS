@@ -10,7 +10,12 @@ export interface MicrosoftEntraAuthConfig {
   teamsScopes: string[]
 }
 
-export type DeploymentAuthConfig = MentraAccountAuthConfig | MicrosoftEntraAuthConfig
+/** AD Glass: the person holding the phone is the only user. No account service. */
+export interface LocalAuthConfig {
+  mode: "local"
+}
+
+export type DeploymentAuthConfig = MentraAccountAuthConfig | MicrosoftEntraAuthConfig | LocalAuthConfig
 
 export interface DeploymentManagedMiniapp {
   packageName: string

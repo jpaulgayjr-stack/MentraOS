@@ -55,6 +55,9 @@ async function fetchCoreDefaults(coreUrl: string): Promise<string[]> {
 async function defaultsFor(deployment: ActiveDeployment): Promise<string[] | null> {
   if (deployment.kind === "workspace") return deployment.manifest.miniapps.defaults
   const coreUrl = resolvedEndpoints().core
+  // AD Glass: with no Core to ask, the list is the manifest's own, which is
+  // known now. It is not "waiting for a connection" that will never come.
+  if (!coreUrl) return deployment.manifest.miniapps.defaults
   try {
     const defaults = await fetchCoreDefaults(coreUrl)
     storage.save(CACHE_KEY, {coreUrl, defaults})

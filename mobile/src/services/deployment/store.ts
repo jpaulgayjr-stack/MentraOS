@@ -1,6 +1,7 @@
 import {storage} from "@/utils/storage/storage"
 
 import type {ActiveDeployment, DeploymentCandidate, DeploymentManifest, WorkspaceDeployment} from "./types"
+import {isCloudless} from "./adGlassManifest"
 import {withClearedDeploymentDebugOverrides} from "./debugOverrides"
 import {createConsumerDeployment} from "./officialManifest"
 import {deploymentManifestSchema} from "./schema"
@@ -47,8 +48,18 @@ export class DeploymentStore {
   private readonly listeners = new Set<(deployment: ActiveDeployment, resolved: boolean) => void>()
 
   constructor(private readonly persistence: DeploymentStorage = new MmkvDeploymentStorage()) {
+    const embedded = createConsumerDeployment()
+    if (isCloudless(embedded.manifest)) {
+      // AD Glass: this build has one deployment and no account to choose it
+      // with. A first run is already resolved, and a stored organization
+      // selection (there should be none) is not honoured.
+      this.active = embedded
+      this.resolved = true
+      this.savedManifest = null
+      return
+    }
     const restored = restoreDeploymentSelection(persistence.load())
-    this.active = restored ?? createConsumerDeployment()
+    this.active = restored ?? embedded
     this.resolved = restored !== null
     this.savedManifest = restored?.kind === "workspace" ? restored.manifest : null
   }

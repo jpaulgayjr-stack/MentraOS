@@ -29,6 +29,8 @@ const mockWorkspaceSession = jest.fn()
 const mockLogout = jest.fn()
 const mockConfirm = jest.fn()
 const mockReplaceAll = jest.fn()
+// AD Glass embeds a deployment with no servers; this suite is about one that has them.
+jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
 jest.mock("@/utils/auth/accountCredentials", () => ({hasStoredAccountSession: () => mockHasStoredSession()}))
 jest.mock("@/services/deployment/auth", () => ({
   ...jest.requireActual("@/services/deployment/auth"),

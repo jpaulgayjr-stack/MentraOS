@@ -1,0 +1,80 @@
+/**
+ * Test fixture: Mentra's own cloud deployment, as upstream's `officialManifest.ts` builds it.
+ *
+ * AD Glass embeds a deployment with no servers (`adGlassManifest.ts`), but upstream modules that are still in the
+ * tree (the cloud URL switcher, the Core-served default miniapp list) have tests written against a deployment that
+ * has them. Those suites swap this in for `@/services/deployment/officialManifest`:
+ *
+ *   jest.mock("@/services/deployment/officialManifest", () => jest.requireActual("@/test-utils/mentraCloudManifest"))
+ *
+ * Never imported by app code.
+ */
+import Constants from "expo-constants"
+
+import {APP_STORE_REVIEW_URL, APP_STORE_URL, PLAY_STORE_URL} from "@/constants/appConfig"
+
+import {packagedOtaPin} from "@/services/deployment/packagedOtaPin"
+import {backendTarget} from "../../scripts/backend-target.cjs"
+import type {ConsumerDeployment, DeploymentManifest} from "@/services/deployment/types"
+
+/** Embedded defaults. Expo inlines these environment reads into each build. */
+export function createOfficialManifest(): DeploymentManifest {
+  return {
+    schemaVersion: 1,
+    deploymentId: "mentra-official",
+    displayName: "Mentra",
+    services: {
+      coreUrl: backendTarget(process.env.EXPO_PUBLIC_CLOUD_CORE_URL),
+      runtimeUrl: process.env.EXPO_PUBLIC_CLOUD_RUNTIME_URL?.trim() || "https://runtime.dev.us-west-2.mentraglass.com",
+    },
+    auth: {mode: "mentra-account"},
+    artifacts: {
+      mentraLiveOtaManifestUrl: packagedOtaPin(
+        Constants.expoConfig?.extra,
+        process.env.EXPO_PUBLIC_ASG_OTA_VERSION_URL,
+      ),
+      sttModelBaseUrl: null,
+      ttsModelBaseUrl: null,
+      firstPartyMiniappsUrl: process.env.EXPO_PUBLIC_MINIAPPS_URL?.trim() || "https://miniapps.dev.mentraglass.com/",
+      directoryUrl: process.env.EXPO_PUBLIC_DIRECTORY_URL?.trim() || "https://api.apps.dev.mentraglass.com/",
+    },
+    appUpdates: {
+      mode: "store",
+      storeUrls: {android: PLAY_STORE_URL, ios: APP_STORE_URL},
+      reviewUrls: {android: PLAY_STORE_URL, ios: APP_STORE_REVIEW_URL},
+    },
+    content: {
+      wallpaperUrls: [
+        "https://mentra-wallpapers.mentraglass.com/landscape1.jpeg",
+        "https://mentra-wallpapers.mentraglass.com/landscape2.jpeg",
+        "https://mentra-wallpapers.mentraglass.com/landscape3.jpeg",
+        "https://mentra-wallpapers.mentraglass.com/trees.jpg",
+        "https://mentra-wallpapers.mentraglass.com/clouds.jpeg",
+        "https://mentra-wallpapers.mentraglass.com/firewatch.jpg",
+      ],
+    },
+    links: {
+      privacyPolicyUrl: "https://mentraglass.com/privacy-policy",
+      termsOfServiceUrl: "https://mentraglass.com/terms-of-service",
+      documentationUrl: "https://docs.mentraglass.com",
+      supportUrl: null,
+    },
+    systemMiniapps: {approvedPackageNamesOverride: null},
+    // Core lists Mentra's defaults (defaultMiniapps.ts).
+    miniapps: {managed: [], defaults: [], configuration: {}},
+    glasses: {allowedModelsOverride: null},
+    features: {
+      runtimeRealtimeSession: true,
+      managedStreams: true,
+      nativeMeetings: true,
+      cloudSpeech: true,
+      onDeviceSpeech: true,
+      navigation: process.env.EXPO_PUBLIC_DEPLOYMENT_REGION !== "china",
+    },
+    telemetry: true,
+  }
+}
+
+export function createConsumerDeployment(): ConsumerDeployment {
+  return {kind: "consumer", source: "embedded", manifest: createOfficialManifest()}
+}

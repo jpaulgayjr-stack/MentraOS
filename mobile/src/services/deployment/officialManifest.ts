@@ -1,69 +1,14 @@
-import Constants from "expo-constants"
-
-import {APP_STORE_REVIEW_URL, APP_STORE_URL, PLAY_STORE_URL} from "@/constants/appConfig"
-
-import {packagedOtaPin} from "./packagedOtaPin"
-import {backendTarget} from "../../../scripts/backend-target.cjs"
+import {createAdGlassManifest} from "./adGlassManifest"
 import type {ConsumerDeployment, DeploymentManifest} from "./types"
 
-/** Embedded defaults. Expo inlines these environment reads into each build. */
+/**
+ * AD Glass: the embedded deployment is the local one. Upstream builds Mentra's
+ * manifest here from `EXPO_PUBLIC_CLOUD_*`; this build reads none of them, so
+ * no build environment can name a server. On an upstream merge conflict in
+ * this file, keep this version (docs/ad-glass/spec-phase2.md).
+ */
 export function createOfficialManifest(): DeploymentManifest {
-  return {
-    schemaVersion: 1,
-    deploymentId: "mentra-official",
-    displayName: "Mentra",
-    services: {
-      coreUrl: backendTarget(process.env.EXPO_PUBLIC_CLOUD_CORE_URL),
-      runtimeUrl: process.env.EXPO_PUBLIC_CLOUD_RUNTIME_URL?.trim() || "https://runtime.dev.us-west-2.mentraglass.com",
-    },
-    auth: {mode: "mentra-account"},
-    artifacts: {
-      mentraLiveOtaManifestUrl: packagedOtaPin(
-        Constants.expoConfig?.extra,
-        process.env.EXPO_PUBLIC_ASG_OTA_VERSION_URL,
-      ),
-      sttModelBaseUrl: null,
-      ttsModelBaseUrl: null,
-      firstPartyMiniappsUrl: process.env.EXPO_PUBLIC_MINIAPPS_URL?.trim() || "https://miniapps.dev.mentraglass.com/",
-      directoryUrl: process.env.EXPO_PUBLIC_DIRECTORY_URL?.trim() || "https://api.apps.dev.mentraglass.com/",
-    },
-    appUpdates: {
-      mode: "store",
-      storeUrls: {android: PLAY_STORE_URL, ios: APP_STORE_URL},
-      reviewUrls: {android: PLAY_STORE_URL, ios: APP_STORE_REVIEW_URL},
-    },
-    content: {
-      wallpaperUrls: [
-        "https://mentra-wallpapers.mentraglass.com/landscape1.jpeg",
-        "https://mentra-wallpapers.mentraglass.com/landscape2.jpeg",
-        "https://mentra-wallpapers.mentraglass.com/landscape3.jpeg",
-        "https://mentra-wallpapers.mentraglass.com/trees.jpg",
-        "https://mentra-wallpapers.mentraglass.com/clouds.jpeg",
-        "https://mentra-wallpapers.mentraglass.com/firewatch.jpg",
-      ],
-    },
-    links: {
-      privacyPolicyUrl: "https://mentraglass.com/privacy-policy",
-      termsOfServiceUrl: "https://mentraglass.com/terms-of-service",
-      documentationUrl: "https://docs.mentraglass.com",
-      supportUrl: null,
-    },
-    systemMiniapps: {approvedPackageNamesOverride: null},
-    // Core lists Mentra's defaults (defaultMiniapps.ts).
-    miniapps: {managed: [], defaults: [], configuration: {}},
-    glasses: {allowedModelsOverride: null},
-    features: {
-      runtimeRealtimeSession: true,
-      managedStreams: true,
-      nativeMeetings: true,
-      cloudSpeech: true,
-      onDeviceSpeech: true,
-      navigation: process.env.EXPO_PUBLIC_DEPLOYMENT_REGION !== "china",
-    },
-    // AD Glass: never start Mentra's Sentry or Firebase collection (this flag
-    // gates both). Upstream ships `true`.
-    telemetry: false,
-  }
+  return createAdGlassManifest()
 }
 
 export function createConsumerDeployment(): ConsumerDeployment {
