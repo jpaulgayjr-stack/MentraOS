@@ -131,7 +131,17 @@ final class BluetoothSdkUpdateCheck {
         return !trimmed.isEmpty && trimmed != "unknown"
     }
 
+    /// AD Glass: the host app must ask for this check. It posts the app's identity to Mentra Core at a hard-coded
+    /// address, so here it runs only when Info.plist sets `MentraBluetoothSdkUpdateCheckEnabled` to true. AD Glass
+    /// never sets it. Upstream runs the check unconditionally.
+    static let enabledInfoKey = "MentraBluetoothSdkUpdateCheckEnabled"
+
+    static func isEnabledByHost(_ bundle: Bundle) -> Bool {
+        bundle.object(forInfoDictionaryKey: enabledInfoKey) as? Bool == true
+    }
+
     func start() {
+        guard Self.isEnabledByHost(bundle) else { return }
         guard Self.isCheckable(sdkVersion) else { return }
         // Bundle and UserDefaults lookups stay off the caller (often main) thread.
         Self.queue.async { [weak self] in

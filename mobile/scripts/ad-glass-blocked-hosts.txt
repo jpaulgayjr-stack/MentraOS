@@ -1,0 +1,63 @@
+# AD Glass: every server the phone app must never contact.
+#
+# The simulator job (ad-glass-sim-boot.sh) points each of these at a sinkhole on
+# the build machine and fails if the app connects to it. ad-glass-hosts.test.mjs
+# fails the build if a Mentra hostname appears in the app's sources and is not
+# listed here, so a host that upstream adds later has to be looked at.
+#
+# One hostname per line. /etc/hosts has no wildcards: list each name.
+
+# Mentra Core and Runtime (production, staging, dev, debug, legacy)
+core.mentraglass.com
+runtime.mentraglass.com
+core.us-west-2.mentraglass.com
+runtime.us-west-2.mentraglass.com
+core.staging.us-west-2.mentraglass.com
+runtime.staging.us-west-2.mentraglass.com
+core.dev.us-west-2.mentraglass.com
+runtime.dev.us-west-2.mentraglass.com
+core.debug.us-west-2.mentraglass.com
+runtime.debug.us-west-2.mentraglass.com
+core.mentra.glass
+core.dev.mentra.glass
+api.mentra.glass
+stagingapi.mentraglass.com
+
+# Miniapp hosts, the directory and link hosts
+miniapps.mentraglass.com
+miniapps.staging.mentraglass.com
+miniapps.dev.mentraglass.com
+api.apps.mentraglass.com
+api.apps.staging.mentraglass.com
+api.apps.dev.mentraglass.com
+apps.mentraglass.com
+apps.mentra.glass
+
+# Firmware, wallpapers, video, other content
+ota.mentraglass.com
+mtkfirmware.mentraglass.com
+artifactscdn.mentraglass.com
+cdn.mentraglass.com
+mentra-wallpapers.mentraglass.com
+mentra-videos-cdn.mentraglass.com
+asset.mentraglass.cn
+
+# Websites
+mentraglass.com
+www.mentraglass.com
+docs.mentraglass.com
+mentraglass.cn
+mentra.glass
+
+# Second line behind the telemetry switches from phase 1: these are not
+# Mentra's hosts, but they are where Mentra's keys would send data.
+us.i.posthog.com
+us-assets.i.posthog.com
+app.posthog.com
+sentry.io
+ingest.sentry.io
+ingest.us.sentry.io
+app-measurement.com
+firebaselogging-pa.googleapis.com
+firebaseinstallations.googleapis.com
+firebase-settings.crashlytics.com
