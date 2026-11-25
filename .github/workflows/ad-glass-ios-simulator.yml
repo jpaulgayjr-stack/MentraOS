@@ -108,7 +108,9 @@ jobs:
           # The Bluetooth SDK's start-up call to Mentra (it carries a per-install
           # id that Mentra's Core forwards to their analytics) stays off whenever
           # the SDK's analytics are off.
-          grep -q 'forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled"' \
+          # The next step tests the behaviour; this only says so in plain words
+          # when a merge has dropped the line.
+          grep -q -E '^[[:space:]]*if self\.bundle\.object\(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled"\) as\? Bool == true \{ return \}' \
             "$sdk/internal/BluetoothSdkUpdateCheck.swift" \
             || fail "BluetoothSdkUpdateCheck no longer stops when the SDK's analytics are disabled"
 
@@ -121,6 +123,11 @@ jobs:
             || fail "mobile/app.config.ts no longer calls applyAdGlass"
 
           exit "$failed"
+
+      - name: Bluetooth SDK tests for the fork's change
+        # Proves, by running it, that an app with the SDK's analytics disabled
+        # sends no update check to Mentra, and that the test can tell.
+        run: swift test --package-path mobile/modules/bluetooth-sdk --filter BluetoothSdkUpdateCheckTests
 
       - name: Environment file
         working-directory: mobile
@@ -136,6 +143,10 @@ jobs:
           if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::package.json version '$version' is not a plain x.y.z version"; exit 1
           fi
+
+          for pinned in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY"; do
+            if [ -z "$pinned" ]; then echo "::error::A pinned backend URL (CLOUD_*) is empty"; exit 1; fi
+          done
 
           sed \
             -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|" \
@@ -187,7 +198,9 @@ jobs:
         working-directory: mobile
         run: |
           rm -rf ios
-          bun expo prebuild --platform ios
+          # --no-install: CocoaPods runs in its own step below, after the cache
+          # is restored. JavaScript dependencies are already installed.
+          bun expo prebuild --platform ios --no-install
 
       - name: Verify the generated project
         working-directory: mobile/ios
@@ -203,19 +216,25 @@ jobs:
             echo "$1 = $actual"
             [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected '$2'"
           }
+          expect_bool() { # name, wanted. The SDK reads a real boolean; the string "true" would not count.
+            actual="$(plutil -extract "$1" raw -expect bool -o - "$info" 2>/dev/null || echo "(missing or not a boolean)")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected the boolean $2"
+          }
           expect CFBundleDisplayName "AD Glass"
           expect CFBundleName "AD Glass"
-          expect MentraBluetoothSdkAnalyticsDisabled "true"
-          expect FIREBASE_ANALYTICS_COLLECTION_ENABLED "false"
+          expect_bool MentraBluetoothSdkAnalyticsDisabled true
+          expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
           grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.adglass"?;' Mentra.xcodeproj/project.pbxproj \
             || fail "The Xcode project does not use the bundle id com.domingueandco.adglass"
 
           # Every permission prompt names AD Glass. "Mentra Live" is a model of
-          # glasses and may stay; $(PRODUCT_NAME) would be shown as "Mentra".
+          # glasses and may stay; $(PRODUCT_NAME) and the like would be shown as
+          # "Mentra". perl exits 0 only when it ran and found nothing.
           prompts="$(plutil -p "$info" | grep 'UsageDescription" =>' || true)"
           echo "$prompts"
           [ -n "$prompts" ] || fail "No permission prompts found in the generated Info.plist"
-          if echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$\(PRODUCT_NAME\)/; END { exit($bad ? 0 : 1) }'; then
+          if ! echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$[({](PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/; END { exit($bad ? 1 : 0) }'; then
             fail "A permission prompt still names Mentra or the Xcode product"
           fi
 
@@ -234,9 +253,47 @@ jobs:
           chmod +x scripts/setup-sherpa-onnx-optional.sh
           ./scripts/setup-sherpa-onnx-optional.sh
 
+      # A cold build downloads pods from hosts we do not control (CocoaPods
+      # trunk, nuget.org, github.com, Maven Central). With an unchanged
+      # dependency set this restores them instead, so an outage at one of those
+      # hosts does not stop a rebuild. GitHub drops a cache that nothing has
+      # read for 7 days, and a cache is only visible to the branch that saved
+      # it, so this covers rebuilds in a busy week, not the 80-day rebuild.
+      - name: Restore the CocoaPods cache
+        id: pods-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            mobile/ios/Pods
+            mobile/ios/Podfile.lock
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ad-glass-pods-v1-${{ runner.os }}-${{ hashFiles('bun.lock', 'mobile/bun.lock', 'mobile/package.json', 'mobile/app.config.ts', 'mobile/scripts/ad-glass.cjs', 'mobile/podspecs/*.podspec', 'mobile/modules/*/ios/*.podspec', 'mobile/plugins/**') }}
+
       - name: CocoaPods
         working-directory: mobile/ios
-        run: pod install
+        env:
+          PODS_CACHE_HIT: ${{ steps.pods-cache.outputs.cache-hit }}
+        run: |
+          echo "pods cache hit: ${PODS_CACHE_HIT:-false}"
+          if ! pod install; then
+            if [ "$PODS_CACHE_HIT" != "true" ]; then exit 1; fi
+            # A restored cache must never be the reason a build fails.
+            echo "::warning::pod install failed on the restored cache; retrying from a clean state"
+            rm -rf Pods Podfile.lock
+            pod install
+          fi
+
+      - name: Save the CocoaPods cache
+        if: steps.pods-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            mobile/ios/Pods
+            mobile/ios/Podfile.lock
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+          key: ${{ steps.pods-cache.outputs.cache-primary-key }}
 
       - name: Build for the iOS Simulator (unsigned)
         working-directory: mobile/ios
@@ -274,6 +331,11 @@ jobs:
             echo "$1 = $actual"
             [ "$actual" = "$2" ] || fail "$1 is '$actual', expected '$2'"
           }
+          expect_bool() { # name, wanted. The SDK reads a real boolean; the string "true" would not count.
+            actual="$(plutil -extract "$1" raw -expect bool -o - "$app/Info.plist" 2>/dev/null || echo "(missing or not a boolean)")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual', expected the boolean $2"
+          }
           # Identity: ours, not Mentra's.
           expect CFBundleIdentifier "com.domingueandco.adglass"
           expect CFBundleDisplayName "AD Glass"
@@ -284,8 +346,8 @@ jobs:
 
           # Telemetry: the Bluetooth SDK's PostHog analytics are off, Firebase
           # collection is off, and no Firebase project file ships in the app.
-          expect MentraBluetoothSdkAnalyticsDisabled "true"
-          expect FIREBASE_ANALYTICS_COLLECTION_ENABLED "false"
+          expect_bool MentraBluetoothSdkAnalyticsDisabled true
+          expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
           if find "$app" -name 'GoogleService-Info*.plist' | grep -q .; then
             fail "A Firebase GoogleService-Info plist is in the app bundle"
           fi
@@ -295,7 +357,7 @@ jobs:
           prompts="$(plutil -p "$app/Info.plist" | grep 'UsageDescription" =>' || true)"
           echo "$prompts"
           [ -n "$prompts" ] || fail "No permission prompts found in the built Info.plist"
-          if echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$\(PRODUCT_NAME\)/; END { exit($bad ? 0 : 1) }'; then
+          if ! echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$[({](PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/; END { exit($bad ? 1 : 0) }'; then
             fail "A permission prompt still names Mentra"
           fi
 
@@ -308,7 +370,11 @@ jobs:
               grep -a -q -F "$url" "$bundle" || fail "main.jsbundle does not contain $url"
             done
             # No Sentry DSN (https://<32 hex>@<host>.sentry.io/<id>) in the bundle.
-            if grep -a -q -E '[0-9a-f]{32}@[a-z0-9.-]*sentry\.io' "$bundle"; then
+            # The one key excluded is the sample DSN in a source comment of
+            # Sentry's own SDK (diagnose-sdk.js). Hermes drops comments today;
+            # the exclusion keeps the guard honest if the bundle ever stops
+            # being bytecode.
+            if grep -a -o -E '[0-9a-f]{32}@[a-z0-9.-]*sentry\.io' "$bundle" | grep -v '^c1dfb07d783ad5325c245c1fd3725390@' | grep -q .; then
               fail "main.jsbundle contains a Sentry DSN"
             fi
           else
