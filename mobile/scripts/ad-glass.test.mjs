@@ -93,16 +93,16 @@ test("the build fails if the Bluetooth SDK plugin can no longer be found", () =>
   const config = upstreamConfig()
   config.plugins = config.plugins.filter((plugin) => !(Array.isArray(plugin) && plugin[0] === BLUETOOTH))
   assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
-  config.plugins.push(BLUETOOTH)
-  assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
 })
 
 test("Bluetooth SDK analytics are off even when upstream passes the plugin no options", () => {
-  const config = upstreamConfig()
   const isBluetooth = (plugin) => Array.isArray(plugin) && plugin[0] === BLUETOOTH
-  config.plugins = config.plugins.map((plugin) => (isBluetooth(plugin) ? [BLUETOOTH] : plugin))
-  const bluetooth = applyAdGlass(config, {}).plugins.find(isBluetooth)
-  assert.deepEqual(bluetooth[1], {analytics: false})
+  for (const bare of [[BLUETOOTH], BLUETOOTH]) {
+    const config = upstreamConfig()
+    config.plugins = config.plugins.map((plugin) => (isBluetooth(plugin) ? bare : plugin))
+    const bluetooth = applyAdGlass(config, {}).plugins.filter(isBluetooth)
+    assert.deepEqual(bluetooth, [[BLUETOOTH, {analytics: false}]])
+  }
 })
 
 test("prompts that name the Xcode product, which stays Mentra, are ours too", () => {
@@ -115,11 +115,13 @@ test("prompts that name the Xcode product, which stays Mentra, are ours too", ()
   assert.deepEqual(
     rebrandPrompts({
       NSLocationAlwaysUsageDescription: "Allow $(PRODUCT_NAME) to use your location",
+      NSContactsUsageDescription: "Allow ${PRODUCT_NAME} or $(TARGET_NAME) to read contacts for MentraOS",
       NSLocalNetworkUsageDescription: "Mentra talks to Mentra Live glasses.",
       CFBundleName: "Mentra",
     }),
     {
       NSLocationAlwaysUsageDescription: "Allow AD Glass to use your location",
+      NSContactsUsageDescription: "Allow AD Glass or AD Glass to read contacts for AD Glass",
       NSLocalNetworkUsageDescription: "AD Glass talks to Mentra Live glasses.",
       CFBundleName: "Mentra",
     },

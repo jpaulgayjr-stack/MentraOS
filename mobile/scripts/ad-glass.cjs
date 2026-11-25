@@ -22,6 +22,9 @@ const SPLASH_PLUGIN = "expo-splash-screen"
 // Build-time plugins that exist only to feed a Mentra-owned service.
 const REMOVED_PLUGINS = new Set(["@sentry/react-native/expo"])
 
+// $(PRODUCT_NAME), ${TARGET_NAME} and the like, as library plugins write them.
+const XCODE_NAME_PLACEHOLDER = /\$[({](?:PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/g
+
 function isAdGlass(env = process.env) {
   return env.AD_GLASS_VARIANT !== "off"
 }
@@ -34,8 +37,8 @@ function rebrandText(value) {
   if (typeof value !== "string") return value
   return (
     value
-      // Xcode expands this to the project's product name, which stays "Mentra".
-      .replace(/\$\(PRODUCT_NAME\)/g, AD_GLASS.appName)
+      // Xcode expands these to the project's product name, which stays "Mentra".
+      .replace(XCODE_NAME_PLACEHOLDER, AD_GLASS.appName)
       .replace(/\bMentraOS\b/g, AD_GLASS.appName)
       .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
       .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
@@ -79,14 +82,15 @@ function pluginName(plugin) {
 }
 
 function adGlassPlugin(plugin) {
-  if (!Array.isArray(plugin)) return plugin
-  const [name, options] = plugin
-  if (name === BLUETOOTH_SDK_PLUGIN) {
+  if (pluginName(plugin) === BLUETOOTH_SDK_PLUGIN) {
     // The SDK's usage analytics post to Mentra's PostHog project and are on by
     // default, whatever the app's own telemetry policy says. Off even when
-    // upstream passes the plugin no options at all.
-    return [name, {...(options && typeof options === "object" ? options : {}), analytics: false}]
+    // upstream lists the plugin with no options, as [name] or as a bare string.
+    const options = Array.isArray(plugin) ? plugin[1] : undefined
+    return [BLUETOOTH_SDK_PLUGIN, {...(options && typeof options === "object" ? options : {}), analytics: false}]
   }
+  if (!Array.isArray(plugin)) return plugin
+  const [name, options] = plugin
   if (!options || typeof options !== "object") return plugin
   if (name === SPLASH_PLUGIN) {
     return [
@@ -109,9 +113,9 @@ function applyAdGlass(config, env = process.env) {
 
   const plugins = config.plugins ?? []
   // Fail the build, not the privacy promise, if upstream moves the plugin.
-  if (!plugins.some((plugin) => pluginName(plugin) === BLUETOOTH_SDK_PLUGIN && Array.isArray(plugin))) {
+  if (!plugins.some((plugin) => pluginName(plugin) === BLUETOOTH_SDK_PLUGIN)) {
     throw new Error(
-      `[ad-glass] ${BLUETOOTH_SDK_PLUGIN} is not in the plugin list with options: its analytics cannot be turned off. ` +
+      `[ad-glass] ${BLUETOOTH_SDK_PLUGIN} is not in the plugin list: its analytics cannot be turned off. ` +
         "Update mobile/scripts/ad-glass.cjs to match app.config.ts.",
     )
   }
