@@ -374,8 +374,8 @@ jobs:
               file="$RUNNER_TEMP/evidence/$name.txt"
               if [ -f "$file" ]; then echo "::group::$name"; cat "$file"; echo "::endgroup::"; fi
             done
-            echo "::group::sinkhole log (connections the app made to blocked hosts)"
-            cat "$RUNNER_TEMP/evidence/sinkhole.jsonl" || true
+            echo "::group::sinkhole log while the app ran (empty means no connection to a blocked host)"
+            cat "$RUNNER_TEMP/evidence/sinkhole-during-app.jsonl" || true
             echo "::endgroup::"
           fi
 

@@ -30,6 +30,12 @@ const EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".cjs", ".mjs", ".json", ".swift", ".m", ".mm", ".h", ".plist", ".example", ".rb",
 ])
 const MENTRA_HOST = /(?<![A-Za-z0-9%.-])((?:[a-z0-9-]+\.)*(?:mentraglass\.com|mentraglass\.cn|mentra\.glass))(?![A-Za-z0-9-])/gi
+/**
+ * A Mentra domain written as a bare suffix, which is how a hostname assembled at run time looks in the source
+ * (`${region}.mentraglass.com`, `"core." + env + ".mentraglass.com"`): the literal scan above cannot name the host.
+ * A leading dot directly after a quote, backtick, `}` or `+` is the tell.
+ */
+const BUILT_AT_RUN_TIME = /(?:[`'"}]|\+\s*["'`])\.(?:[a-z0-9-]+\.)*(?:mentraglass\.com|mentraglass\.cn|mentra\.glass)(?![A-Za-z0-9-])/gi
 /** Matches that are not hostnames: an Android-style package name written in the sources. */
 const NOT_HOSTS = new Set(["com.mentra.glass"])
 /** Files whose job is to name these hosts. */
@@ -56,20 +62,27 @@ function* files(path) {
   }
 }
 
-function mentraHostsInSources() {
+function scanSources() {
   const found = new Map()
+  const assembled = []
   for (const root of ROOTS) {
     for (const file of files(join(repo, root))) {
       const name = relative(repo, file).split(sep).join("/")
       if (SELF.has(name)) continue
-      for (const match of readFileSync(file, "utf8").matchAll(MENTRA_HOST)) {
+      const text = readFileSync(file, "utf8")
+      for (const match of text.matchAll(MENTRA_HOST)) {
         const host = match[1].toLowerCase()
         if (NOT_HOSTS.has(host)) continue
         if (!found.has(host)) found.set(host, name)
       }
+      for (const match of text.matchAll(BUILT_AT_RUN_TIME)) assembled.push(`${match[0]} (${name})`)
     }
   }
-  return found
+  return {found, assembled}
+}
+
+function mentraHostsInSources() {
+  return scanSources().found
 }
 
 test("the blocked-hosts list is well formed", () => {
@@ -92,6 +105,25 @@ test("every Mentra hostname in the app's sources is blocked in the simulator job
     "Mentra hostnames that are in the sources but not in mobile/scripts/ad-glass-blocked-hosts.txt. " +
       "Check what uses each one, make sure AD Glass cannot reach it, then add it to the list.",
   )
+})
+
+test("no Mentra hostname is assembled at run time, where this list could not name it", () => {
+  assert.deepEqual(
+    scanSources().assembled,
+    [],
+    "A Mentra domain appears as a bare suffix, so some code builds a hostname from parts. Work out every host it can " +
+      "produce, make sure AD Glass cannot reach them, add them to the blocked-hosts list, and only then teach this " +
+      "test about the pattern.",
+  )
+})
+
+test("the run-time pattern recognises the usual ways of building a hostname", () => {
+  for (const sample of ["`https://${region}.mentraglass.com`", '"core." + env + ".mentraglass.com"', "'.mentra.glass'"]) {
+    assert.equal([...sample.matchAll(BUILT_AT_RUN_TIME)].length, 1, sample)
+  }
+  for (const sample of ['"https://core.mentraglass.com"', "apps.mentra.glass", "com.mentraglass"]) {
+    assert.equal([...sample.matchAll(BUILT_AT_RUN_TIME)].length, 0, sample)
+  }
 })
 
 test("the hosts the phase 1 build talked to are on the list", () => {

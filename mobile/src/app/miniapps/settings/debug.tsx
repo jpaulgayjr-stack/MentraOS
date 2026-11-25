@@ -13,6 +13,8 @@ import {RouteButton} from "@/components/ui/RouteButton"
 import {Spacer} from "@/components/ui/Spacer"
 import {useAppTheme} from "@/contexts/ThemeContext"
 import {useNavigationStore} from "@/stores/navigation"
+import {isCloudless} from "@/services/deployment/adGlassManifest"
+import {deploymentStore} from "@/services/deployment/store"
 import {translate} from "@/i18n"
 import {SETTINGS, useSetting} from "@mentra/engine"
 import {navigationService} from "@mentra/engine-host-internal"
@@ -283,9 +285,12 @@ export default function DebugSettingsScreen() {
             />
           </Group>
 
-          <Group title="Cloud V2 (core + runtime)">
-            <CloudUrl />
-          </Group>
+          {/* AD Glass: no servers to switch between, and the switcher's presets and health check are Mentra's. */}
+          {!isCloudless(deploymentStore.getActive().manifest) && (
+            <Group title="Cloud V2 (core + runtime)">
+              <CloudUrl />
+            </Group>
+          )}
 
           {/* Super mode only: a wrong OTA manifest can brick glasses */}
           {superMode && <OtaVersionUrl />}

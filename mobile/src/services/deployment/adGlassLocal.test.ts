@@ -133,7 +133,16 @@ describe("what the engine is configured with", () => {
 })
 
 describe("account screens", () => {
-  it.each(["/auth/start", "/auth/workspace-signin", "/auth/email-login?email=a", "/auth/reset-password#x", "/auth/", "/auth"])(
+  it.each([
+    "/auth/start",
+    "/auth/workspace-signin",
+    "/auth/email-login?email=a",
+    "/auth/reset-password#x",
+    "/auth/",
+    "/auth",
+    "//auth/start",
+    "/auth//start",
+  ])(
     "%s is replaced by the boot route",
     (path) => {
       expect(isAccountRoute(path)).toBe(true)

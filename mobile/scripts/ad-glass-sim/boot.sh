@@ -18,7 +18,8 @@ BUNDLE_ID="com.domingueandco.adglass"
 SCHEME="adglass"
 SETTLE_SECONDS="${ADGLASS_SETTLE_SECONDS:-75}"
 # Words that only the sign-in, sign-up, update and start-error screens show.
-UNWANTED="sign up with email|continue with (google|apple)|log ?in|sign ?in|create account|password|update required|connection error|could not start"
+# Whole words only, so "designing" or "catalog in" do not count as "sign in" or "log in".
+UNWANTED="(^|[^a-z])(sign up with email|continue with (google|apple)|log ?in|sign ?in|create account|password|update required|connection error|could not start)([^a-z]|\$)"
 
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -208,12 +209,23 @@ fi
 
 # ── 5. The verdict on the network ───────────────────────────────────────────
 sleep 5
+cp "$SINK_LOG" "$OUT/sinkhole-during-app.jsonl"
 attempts="$(grep -c . "$SINK_LOG" 2> /dev/null || true)"
 if [ "${attempts:-0}" = "0" ]; then
-  pass "the app made no connection to any of the $count blocked hostnames"
+  pass "nothing on the build machine, the app included, connected to any of the $count blocked hostnames while the app ran"
 else
-  fail "the app made $attempts connection(s) to blocked hostnames: $(python3 "$HERE/sinkhole-hosts.py" "$SINK_LOG")"
+  fail "$attempts connection(s) reached blocked hostnames while the app ran: $(python3 "$HERE/sinkhole-hosts.py" "$SINK_LOG")"
 fi
+# An empty log only counts if the sinkhole was still listening at the end, on both ports.
+curl -sk --max-time 5 https://runtime.mentraglass.com/adglass-selftest-after > /dev/null 2>&1 || true
+curl -s --max-time 5 http://miniapps.mentraglass.com/adglass-selftest-after > /dev/null 2>&1 || true
+sleep 2
+if sink_has runtime.mentraglass.com && sink_has miniapps.mentraglass.com; then
+  pass "the sinkhole was still recording on both ports after the app ran (self-test)"
+else
+  fail "the sinkhole had stopped recording by the end of the run: the empty log proves nothing"
+fi
+cp "$SINK_LOG" "$OUT/sinkhole-selftest-after.jsonl"
 
 kill "$log_pid" > /dev/null 2>&1 || true
 reports="$HOME/Library/Logs/DiagnosticReports"
@@ -229,8 +241,9 @@ note "## What this does not show"
 note ""
 note "Bluetooth does not exist in the simulator: pairing, the glasses display, the ring, the microphone and"
 note "on-device speech with real audio are unverified here. Only boot, about ${SETTLE_SECONDS}s on the home"
-note "screen and two links were observed, and only connections to the listed hostnames over TCP ports 80"
-note "and 443 are counted."
+note "screen and two links were observed. Only connections to the listed hostnames over TCP ports 80 and 443"
+note "are counted: a host that is not on the list, another port, or UDP would not show. The app's open sockets"
+note "(app-connections.txt) are recorded for reading, not checked."
 note ""
 if [ "$failures" -eq 0 ]; then
   note "**Result: all checks passed.**"

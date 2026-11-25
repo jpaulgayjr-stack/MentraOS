@@ -110,7 +110,9 @@ it("starts the engine and goes Home on a first launch, with no welcome carousel 
   expect(mockReplaceAll).not.toHaveBeenCalled()
 })
 
-it("asks no server about versions and makes no network request", async () => {
+// The engine start is mocked here: this is about index.tsx itself. What the engine does with no cloud is covered by
+// the engine tests (CloudClientService.cloudless) and the simulator job.
+it("asks no server about versions and makes no request of its own", async () => {
   await boot()
   expect(fetchMinimumClientVersion).not.toHaveBeenCalled()
   expect(fetchSpy).not.toHaveBeenCalled()

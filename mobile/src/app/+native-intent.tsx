@@ -10,7 +10,8 @@ function systemRoute(path: string): string {
   if (path.startsWith("/")) return path
   try {
     const url = new URL(path)
-    if (url.protocol === `${APP_SCHEME}:`) return `/${url.hostname}${url.pathname}`
+    // `<scheme>:///auth/start` has an empty host: the route is the path itself.
+    if (url.protocol === `${APP_SCHEME}:`) return url.hostname ? `/${url.hostname}${url.pathname}` : url.pathname
     return url.pathname
   } catch {
     return path

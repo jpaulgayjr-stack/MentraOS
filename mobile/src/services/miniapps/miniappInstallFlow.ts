@@ -25,6 +25,7 @@ import {confirmMiniappInstall} from "@/components/miniapps/MiniappInstallSheet"
 import {showAlert, waitForAlertHost} from "@/contexts/ModalContext"
 import {translate} from "@/i18n"
 import {deploymentStore} from "@/services/deployment"
+import {isCloudless} from "@/services/deployment/adGlassManifest"
 import {useNavigationStore} from "@/stores/navigation"
 import {blockUpdatingMiniapp} from "@/utils/miniappUpdatingAlert"
 import {askPermissionsUI} from "@/utils/PermissionsUtils"
@@ -82,6 +83,11 @@ export async function startListedMiniappInstall(
   const directoryUrl = deploymentStore.getActive().manifest.artifacts.directoryUrl
   if (!directoryUrl) {
     options.onPresent?.()
+    // AD Glass: there is no directory, and the fallback below opens Mentra's website. Say so instead.
+    if (isCloudless(deploymentStore.getActive().manifest)) {
+      await showFailure("directory_unreachable", {})
+      return "failed"
+    }
     // An in-app browser, which never hands the page's own link back to the app.
     await WebBrowser.openBrowserAsync(directoryPackageLink(packageName)).catch((error) =>
       console.warn(`MiniappInstall: couldn't open ${packageName}'s page`, error),

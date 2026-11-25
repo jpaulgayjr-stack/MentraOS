@@ -1,6 +1,6 @@
 # AD Glass: every server the phone app must never contact.
 #
-# The simulator job (ad-glass-sim-boot.sh) points each of these at a sinkhole on
+# The simulator job (ad-glass-sim/boot.sh) points each of these at a sinkhole on
 # the build machine and fails if the app connects to it. ad-glass-hosts.test.mjs
 # fails the build if a Mentra hostname appears in the app's sources and is not
 # listed here, so a host that upstream adds later has to be looked at.

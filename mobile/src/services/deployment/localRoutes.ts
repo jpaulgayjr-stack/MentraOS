@@ -11,7 +11,8 @@ const NO_ACCOUNT_SCREENS = isCloudless(createOfficialManifest())
 
 /** Whether `path` (a route, with or without a query) is one of the account screens. */
 export function isAccountRoute(path: string): boolean {
-  const route = path.split(/[?#]/)[0].replace(/\/+$/, "")
+  // Collapse repeated slashes first: `//auth/start` is the same screen to the router.
+  const route = path.split(/[?#]/)[0].replace(/\/{2,}/g, "/").replace(/\/+$/, "")
   return route === "/auth" || route.startsWith("/auth/")
 }
 
