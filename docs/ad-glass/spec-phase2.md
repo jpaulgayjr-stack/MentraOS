@@ -28,12 +28,13 @@ All Claude-decided under the 2026-10-19 delegation unless marked.
 | Deployment | The embedded manifest becomes `ad-glass-local`: `services.coreUrl` and `runtimeUrl` are `null`, `auth.mode` is the new `"local"`, every cloud feature flag is `false`, `telemetry` is `false`. It reads no environment variable. | The manifest type already allows null services. Hard-coding beats configuration: a stray `EXPO_PUBLIC_CLOUD_CORE_URL` in a build environment cannot bring the cloud back. |
 | "Cloudless" test | One predicate, `isCloudless(manifest)`: both service URLs are null. Host and engine each have a copy of this one-line rule. | The engine is a separate package and must not import app code. |
 | Fresh install | The deployment store starts resolved. There is no "Mentra or organization" chooser and no organization (Microsoft Entra) path. | `index.tsx:357` sends an unresolved install to `/auth/start`. |
-| Debug URL overrides | Ignored while the manifest is cloudless. | A saved dev override (`cloud_core_url` setting) would otherwise repoint the app at a server. |
+| Debug URL overrides | Ignored while the manifest is cloudless, and never counted as "this changes Core". | A saved dev override (`cloud_core_url` setting) would otherwise repoint the app at a server, and the debug URL screen would start a sign-out. |
+| Account screens | Every navigation to `/auth/*` is sent to the boot route, in the navigation store (all in-app navigation goes through it) and in the system link handler. | The sign-in, password and organization screens stay in the bundle until phase 2b. Several upstream paths still navigate to them (the link fallback, the debug URL switcher, Mentra Live pairing). One guard at the choke point is smaller and safer than editing each caller. |
 | Boot | `index.tsx` skips the version check, the cached version floor and the token exchange; it starts the engine and goes to home. The first-run "welcome" carousel is skipped: home already shows the "Pair glasses" card. | Task requirement: boot straight to home. |
 | Engine with no cloud | `CloudClientService.construct()` returns without building a client when the config is cloudless. `hasCore()` is then false, which already gates support-profile sync, fleet, crash reports and the core-token push to the glasses (`engine.ts:119-146`). | Today `engine.start()` throws at `engine.ts:80` with no Runtime, so nothing starts. One guard at the single place a client is built covers every lazy caller. |
 | Storage identity | The host passes `auth.getUserId = () => "local:adglass"` and no `getSubjectToken`. | `resolveMentraUserId()` (`CloudClientService.ts:762`) uses the host id first. Without it a miniapp's storage calls fail with `NOT_CONNECTED`, which would break AD Home's notes. |
-| Speech to text | With cloud speech off, `preferCloud` and `preferLocal` are both treated as `localOnly`. | Today a default-option listener is refused ("Cloud speech is disabled by this deployment", `LocalMiniappRuntime.ts:292`) instead of being served on-device. `localOnly` is the only value that can never select a cloud path. |
-| Text to speech | Same coercion (it shares `readSpeechProcessing`), so `speak` goes on-device or fails cleanly with `TTS_LOCAL_UNAVAILABLE`. | `LocalMiniappRuntime.ts:3009-3016`. |
+| Speech to text | With cloud speech off and on-device speech on, a `preferCloud` listener (the default) is accepted instead of refused, and is served on-device like `preferLocal` and `localOnly`. | Upstream refuses it ("Cloud speech is disabled by this deployment", `LocalMiniappRuntime.ts:292`). The router picks the cloud only while the cloud counts as connected, and that needs both the `cloudSpeech` flag and a live session (`cloudSpeechUp()`), neither of which exists here. The listener keeps its own `processing` value because older miniapp SDKs sort delivered events by it. |
+| Text to speech | A speak request is treated as `localOnly` where cloud speech is off, so it goes on-device or fails cleanly with `TTS_LOCAL_UNAVAILABLE`. | `localOnly` is the one branch of the speak path with no cloud call in it (`LocalMiniappRuntime.ts:3009-3016`). |
 | System miniapps | Keep the screens compiled into the app: Settings, Gallery, Mirror, Notifications, Miniapp Developer. Hide Feedback (it only files reports with Mentra). Install none of the twelve downloaded ones (AI, Call, Captions, Notes, Navigation and others): `miniapps.defaults` is empty and `firstPartyMiniappsUrl` is null. | The five kept ones are routes in the binary (`BuiltInMiniappCatalog.ts:205-333`); nothing is downloaded for them. Seven of the twelve downloads have no source in this repo, and a G2 user needs none of them to run AD Home. |
 | AD Home install | **Scan the release QR from Paul's laptop**, exactly as he installs it today: `scripts\release.cmd` in the AD Home repo, then AD Glass > Settings > Miniapp Developer > Scan. It installs as a local build and keeps running without the laptop. | See section 6. |
 | Ring pairing entry | "Pair controller" in Settings is shown always, not only in super mode. | It is the only route to `/pairing/select-controller` (`DeviceSettingsSection.tsx:294`), and the ring fix is the reason this fork exists. |
@@ -61,45 +62,56 @@ Rejected alternatives:
 | File | What |
 |---|---|
 | `mobile/src/services/deployment/adGlassManifest.ts` | The `ad-glass-local` manifest and `isCloudless()` |
-| `mobile/src/utils/auth/provider/localClient.ts` | `LocalAuthProvider` |
-| `mobile/modules/engine/src/services/cloudless.ts` | Engine-side `isCloudlessConfig()` and the speech coercion |
-| Tests beside each of the above, and `mobile/scripts/ad-glass-hosts.test.mjs` | See section 7 |
-| `mobile/scripts/ad-glass-blocked-hosts.txt` | Every Mentra hostname the simulator job sinkholes (section 9) |
-| `mobile/scripts/ad-glass-sim-boot.sh`, `ad-glass-sinkhole.py`, `ad-glass-ocr.swift` | Simulator boot proof (section 7) |
+| `mobile/src/services/deployment/localRoutes.ts` | `routeForThisBuild()`: account routes become the boot route |
+| `mobile/src/utils/auth/localUser.ts`, `mobile/src/utils/auth/provider/localClient.ts` | The local user's id and session marker; `LocalAuthProvider` |
+| `mobile/modules/engine/src/services/cloudless.ts` | Engine side: `isCloudlessConfig()`, the speech refusal rule, the speak coercion |
+| `mobile/scripts/ad-glass-blocked-hosts.txt`, `ad-glass-hosts.test.mjs` | The hostnames the simulator job sinkholes, and the test that keeps the list complete |
+| `mobile/scripts/ad-glass-sim/` (`boot.sh`, `sinkhole.py`, `ocr.swift`, `pick-simulator.py`, `sinkhole-hosts.py`) | Simulator boot proof (section 7) |
+| `mobile/src/test-utils/mentraCloudManifest.ts` | Test fixture only: upstream's Mentra manifest, for the upstream suites that are about a deployment with servers |
+| Tests: `adGlassManifest.test.ts`, `adGlassLocal.test.ts`, `localClient.test.ts`, `ad-glass-boot.test.tsx`, `navigation.adglass.test.ts`, `defaultMiniapps.adglass.test.ts`, and in the engine `cloudless.test.ts`, `CloudClientService.cloudless.test.ts` | See section 7 |
 
-### Upstream files edited (kept as small as possible)
+### Upstream files edited (each edit is a few lines unless noted)
 
 | File | Edit |
 |---|---|
-| `mobile/src/services/deployment/officialManifest.ts` | `createOfficialManifest()` returns the AD Glass manifest; no environment reads remain |
+| `mobile/src/services/deployment/officialManifest.ts` | Rewritten: `createOfficialManifest()` returns the AD Glass manifest; no environment reads remain. On a merge conflict, keep ours |
 | `mobile/src/services/deployment/types.ts` | Add `{mode: "local"}` to the auth union |
-| `mobile/src/services/deployment/store.ts` | Start resolved on the embedded local deployment; ignore any persisted workspace selection |
+| `mobile/src/services/deployment/auth/createDeploymentAuthProvider.ts` | The new mode in its `switch` (throws: it is not an organization sign-in) |
+| `mobile/src/services/deployment/store.ts` | Start resolved on the embedded local deployment; ignore any persisted organization selection |
 | `mobile/src/services/deployment/debugOverrides.ts` | No Core or Runtime override on a cloudless manifest |
-| `mobile/src/services/cloudClient.ts` | `resolvedEndpoints()` typed as nullable; `allowLegacyOtaFallback` false when cloudless |
+| `mobile/src/services/cloudClient.ts` | `allowLegacyOtaFallback` false when cloudless |
 | `mobile/src/utils/auth/authClient.ts` | Pick `LocalAuthProvider` on a local deployment |
-| `mobile/src/contexts/AuthContext.tsx` | Telemetry flag from the manifest instead of a literal `true`; `logout` is a no-op for the local user |
-| `mobile/src/app/index.tsx` | Local boot path; no version check, no cached floor, no token gate, no welcome carousel |
+| `mobile/src/contexts/AuthContext.tsx` | Telemetry flag from the manifest instead of a literal `true`; `logout` does nothing for the local user |
+| `mobile/src/app/index.tsx` | Local boot path, and a "could not start" screen with Try again instead of an endless splash |
 | `mobile/src/services/MantleManager.ts` | Local auth seam (`getUserId` only) |
 | `mobile/src/services/miniapps/defaultMiniapps.ts` | No Core means the manifest's (empty) list, not "waiting for connection" |
-| `mobile/src/services/miniapps/BuiltInMiniappCatalog.ts` | Hide Feedback when cloudless |
-| `mobile/src/effects/AllEffects.tsx` | Do not mount `FleetSheets` when cloudless |
+| `mobile/src/services/miniapps/miniappVisibility.ts` | Hide the Feedback tile when cloudless |
+| `mobile/src/effects/AllEffects.tsx` | Do not mount `FleetSheets` or the screenshot feedback prompt when cloudless |
 | `mobile/src/app/miniapps/settings/main.tsx` | Hide the Profile and Feedback rows when cloudless |
 | `mobile/src/components/settings/DeviceSettingsSection.tsx` | "Pair controller" without super mode |
-| `mobile/src/contexts/DeeplinkContext.tsx`, `mobile/src/app/+native-intent.tsx`, `mobile/src/services/miniapps/miniappInstallLinks.ts`, `mobile/src/constants/appConfig.ts` | Scheme from `APP_SCHEME`; an unmatched link goes home, not to `/auth/start` |
-| `mobile/modules/engine/src/services/CloudClientService.ts` | Cloudless guard in `construct()` |
-| `mobile/modules/engine/src/services/TranscriptionRouting.ts` (or its two call sites) | Speech coercion |
+| `mobile/src/stores/navigation.ts`, `mobile/src/app/+native-intent.tsx` | Account routes go to the boot route; scheme from `APP_SCHEME` |
+| `mobile/src/services/miniapps/miniappInstallLinks.ts`, `loadAuthoringMiniapp.ts`, `mobile/src/services/attendedPermissionRequest.ts`, `permissionStatusRequest.ts` | Scheme from `APP_SCHEME` instead of the literal `com.mentra` |
+| `mobile/modules/engine/src/services/CloudClientService.ts` | Cloudless guard at the top of `construct()` |
+| `mobile/modules/engine/src/services/LocalMiniappRuntime.ts` | The speech refusal rule and the speak coercion now come from `cloudless.ts` |
 | `mobile/modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift` | Opt-in guard at the top of `start()` |
-| `mobile/scripts/ad-glass.cjs`, `ad-glass.test.mjs` | Scheme `adglass`; guard that the update-check key is absent |
-| `.github/workflows/ad-glass-ios-simulator.yml` | Canary environment, static guards, unit tests, simulator boot job |
-| Upstream tests that assert the old behaviour (`officialManifest.test.ts`, `__tests__/app/version-reset.test.tsx`) | Rewritten or removed, listed in the PR |
+| `mobile/scripts/ad-glass.cjs`, `ad-glass.d.cts`, `ad-glass.test.mjs` | Scheme `adglass`; the update-check key can never be set; no Core address in the packaged config |
+| `.github/workflows/ad-glass-ios-simulator.yml` | Three jobs: tests, simulator build with no-backend guards, boot with hosts sinkholed |
 
-Not touched: `mobile/modules/bluetooth-sdk/ios/Source/sgcs/G2.swift`, the pairing screens, the miniapp runtime's launch path, Android sources.
+Upstream tests touched:
+
+- Removed, because the behaviour they covered is gone and new tests cover its replacement: `officialManifest.test.ts` (environment-driven Core URL; see `adGlassManifest.test.ts`) and `__tests__/app/version-reset.test.tsx` (boot version check; see `ad-glass-boot.test.tsx`).
+- Given the cloud fixture with one added `jest.mock` line, nothing else changed: `configuration.test.ts`, `deployment.test.ts`, `deploymentManagedMiniappSync.test.ts`, `defaultMiniapps.test.ts`, `components/dev/CloudUrl.test.tsx`.
+- `__tests__/app/native-intent.test.ts`: two expectations changed. Links to account screens used to pass through to the router; now they boot normally.
+- `MantleManager.test.ts`: one test added (the engine hand-off).
+- Not run and now out of date: the Swift unit tests in `mobile/modules/bluetooth-sdk/ios/Tests/BluetoothSdkUpdateCheckTests.swift` expect the update check to run without the opt-in. Nothing in this fork runs the SDK's Swift tests; they need the opt-in key if anyone does.
+
+Not touched: `mobile/modules/bluetooth-sdk/ios/Source/sgcs/G2.swift`, the pairing screens, the miniapp runtime's launch and install paths, `DeeplinkContext.tsx`, Android sources.
 
 ## 5. Boot sequence after this change
 
 1. `_layout.tsx` loads settings and mounts providers (unchanged). Sentry stays uninitialized (empty DSN, telemetry false).
 2. `DeploymentStore` constructs with the embedded local manifest, already resolved.
-3. `AuthProvider` asks `mentraAuth.getSession()`. The lazy client sees `auth.mode === "local"` and builds `LocalAuthProvider`, which answers from memory: user `local:adglass`, token marker `local-device`. `openAccountSettings("local:adglass")` opens that user's settings store.
+3. `AuthProvider` asks `mentraAuth.getSession()`. The lazy client sees `auth.mode === "local"` and builds `LocalAuthProvider`, which answers from memory: user `local:adglass`, token marker `local-device`. `openAccountSettings("local:adglass")` opens that user's settings store. `accountClient.ts` (the client for Mentra's account service) is never constructed.
 4. `index.tsx` waits for auth and navigation, then on a cloudless deployment runs `mantle.init()` and navigates. No network call is made on this path.
 5. `MantleManager.initialize()` configures the engine with `auth: {getUserId}` and the cloudless config. `engine.start()` skips the cloud client, the audio uplink (flags off), and every `hasCore()` service; Bluetooth, device events, settings sync, the local miniapp runtime and the display processor start as before.
 6. `defaultMiniapps.sync` finds an empty list and goes idle. `miniappUpdateScheduler` still checks each installed miniapp against its own URL (AD Home's is the laptop address; unreachable is a quiet no-op).
@@ -137,10 +149,13 @@ A miniapp whose age rating is above the app's own cannot launch: the gate needs 
 ### Unit tests (run locally and in the workflow)
 
 - `adGlassManifest.test.ts`: services null, flags false, telemetry false, no `mentraglass` or `mentra.glass` string anywhere in the manifest, and the same result whatever `EXPO_PUBLIC_CLOUD_*` says.
-- `localClient.test.ts`: session, user and subscription behaviour; `getSubjectToken`, sign-in and sign-up reject; no `fetch` is called.
-- `store` and `debugOverrides` tests: resolved on first run; a saved override does not change null services.
-- Engine (`bun test`): cloudless config builds no client and `init()` does not throw; speech coercion table; `targetSource` stays `local`.
-- `ad-glass.test.mjs`: scheme is `adglass` in `scheme` and `CFBundleURLTypes`; no `com.mentra` scheme remains; the update-check opt-in key is absent.
+- `localClient.test.ts`: session, user and subscription behaviour; every account operation and `getSubjectToken` reject; no `fetch` is called.
+- `adGlassLocal.test.ts`: the store is resolved on first run and ignores a stored organization; a saved override does not change null services; what the engine is configured with; the account-route rule.
+- `ad-glass-boot.test.tsx`: `index.tsx` starts the engine and goes Home with no version call, no network, no cached floor and no welcome carousel; a start failure shows a message and a retry.
+- `navigation.adglass.test.ts`: push, replace, replaceAll and navigate to an account route all land on the boot route.
+- `defaultMiniapps.adglass.test.ts`: nothing fetched, nothing installed, not "waiting".
+- Engine (`bun test`): a cloudless config builds no client on init or reconnect, every cloud call fails locally, storage identity comes from the host; the speech refusal table; routing stays on-device.
+- `ad-glass.test.mjs`: scheme is `adglass` in `scheme` and `CFBundleURLTypes`; a leftover Mentra scheme fails the build; the update-check opt-in key is removed; no Core address in the packaged config.
 - `ad-glass-hosts.test.mjs`: every `*.mentraglass.com`, `*.mentraglass.cn` and `mentra.glass` hostname that appears in `mobile/src`, `mobile/modules/*/src`, `mobile/modules/*/ios/Source` and `cloud-v2/packages/cloud-client/src` is in the blocked-hosts list, so a host that upstream adds later fails the build until it is triaged.
 
 ### Static guards on the built app (workflow)
@@ -151,12 +166,14 @@ A miniapp whose age rating is above the app's own cannot launch: the gate needs 
 
 ### Simulator boot with Mentra blocked (workflow)
 
-1. Append every hostname in `ad-glass-blocked-hosts.txt` to the runner's `/etc/hosts`, pointing at `127.0.0.1`, and flush the DNS cache. The simulator uses the Mac's resolver.
-2. Start a sinkhole on `127.0.0.1` ports 80 and 443 that accepts, logs and closes every connection.
-3. Boot a simulator, install the built app, launch it, wait, take screenshots.
-4. Pass conditions: the app process is still running; text recognition (Apple's Vision framework, already on the runner) finds the home screen's "Pair glasses" text and no sign-in text; the sinkhole log is empty.
-5. `xcrun simctl openurl booted adglass://...` opens the app (scheme registered).
-6. Screenshots, recognized text and the sinkhole log are uploaded as artifacts.
+`mobile/scripts/ad-glass-sim/boot.sh`, run by the `boot` job:
+
+1. Append every hostname in `ad-glass-blocked-hosts.txt` to the runner's `/etc/hosts`, pointing at `127.0.0.1` and `::1`, and flush the DNS cache.
+2. Start a sinkhole on ports 80 and 443 that accepts, logs (with the hostname the client asked for) and closes every connection.
+3. Self-tests, so an empty log means something: a request from the Mac and one from the simulator's own browser must each show up in the sinkhole log. The log is then cleared.
+4. Boot a simulator, install the built app, launch it, take screenshots at intervals for 75 seconds.
+5. Pass conditions: the app process is still running; text recognition (Apple's Vision framework, already on the runner) finds the home screen's "Pair glasses" text and no sign-in, update or error wording; an `adglass://auth/start` link is accepted by iOS and leaves the app on Home; a `com.mentra://` link is not accepted; no crash report; the sinkhole log is empty.
+6. Screenshots, recognized text, the app's open sockets and the sinkhole log are uploaded as artifacts and summarised on the run page.
 
 The sinkhole is used instead of an unroutable address because it proves more: an unroutable address only shows the app survives a failed call, the sinkhole shows no call was attempted.
 
@@ -208,8 +225,9 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 - **Speech model not downloaded and no network.** Transcription reports `downloading` or `unavailable`; text to speech fails with `TTS_LOCAL_UNAVAILABLE`. Neither tries a cloud path.
 - **A miniapp that asks for `preferCloud`.** Served on-device.
 - **Logout.** There is no row for it. If a stale route calls it, it does nothing: wiping local data with no account to return to would only lose Paul's settings.
+- **Anything that navigates to a sign-in screen** (an unmatched deep link, the debug URL switcher, an `adglass://auth/...` link) lands on the boot route, which goes Home.
 - **Background recovery (iOS relaunching the app after a Bluetooth event).** `backgroundRecovery.ts` needs a resolved deployment and a session token; both are satisfied locally.
-- **Upstream merges.** Fifteen or so upstream files carry small edits. Conflicts in `officialManifest.ts` resolve as "keep ours". The guards in section 7 fail the build if a merge silently restores a cloud path.
+- **Upstream merges.** About two dozen upstream files carry small edits (section 4). Conflicts in `officialManifest.ts` resolve as "keep ours". The guards in section 7 fail the build if a merge silently restores a cloud path.
 
 ## 12. The three most likely silent failures
 
@@ -219,7 +237,7 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 
 ## 13. Blast radius
 
-- Paul's fork: one branch, about fifteen upstream files with small edits, about ten new files, one workflow.
+- Paul's fork: one branch, about two dozen upstream files with small edits, about twenty new files (half of them tests), one workflow.
 - Paul's phone: nothing until the first TestFlight build. Then one app with its own storage.
 - The glasses and ring: nothing is written to them that the Mentra app does not write. No core token is pushed any more.
 - Not touched: Mentra's repository and services, AD-ERP, the AD Home repository, Android.
