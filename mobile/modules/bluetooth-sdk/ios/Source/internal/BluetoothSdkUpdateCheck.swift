@@ -73,8 +73,9 @@ enum BluetoothSdkUpdateNotice {
 /// Checks Mentra Core for a newer SDK on every SDK start and, when this SDK is
 /// behind, prints a console banner now and every `reprintInterval` while the SDK
 /// instance lives. The check is one request with a short timeout and no retry;
-/// any failure is silent and changes no SDK behavior. It runs regardless of the
-/// analytics setting.
+/// any failure is silent and changes no SDK behavior. AD Glass: upstream runs it
+/// regardless of the analytics setting; in this fork an app that disables the
+/// SDK's analytics in its Info.plist sends no check (see `start()`).
 final class BluetoothSdkUpdateCheck {
     /// Posts the JSON body and completes with the 200 response body, or nil on any failure.
     typealias Transport = @Sendable (_ body: Data, _ completion: @escaping @Sendable (Data?) -> Void) -> Void
