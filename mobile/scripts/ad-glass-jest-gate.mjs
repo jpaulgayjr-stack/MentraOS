@@ -4,8 +4,13 @@
 //
 // Every test must pass. The only suites allowed to fail are the ones listed
 // below, and only by failing to load: they read source files of Mentra's
-// glasses firmware client (`asg_client/`), which this repository does not
-// contain, so they cannot run here. Anything else that fails, fails the build.
+// glasses firmware client (`asg_client/`). Upstream removed that directory from
+// this repository (commit d4c4fd708, "Remove asg_client/: it moved to the
+// private Mentra-Live-ASG-Client repo") and left these two suites behind, so
+// they fail to load for upstream as well; there is nothing here to check out.
+// Verified 2026-11-25: `git ls-tree upstream/dev asg_client` is empty.
+// CONTRIBUTING.md still links the directory; that link is stale.
+// Anything else that fails, fails the build.
 // A listed suite that starts passing is reported so it can be taken off the list.
 import {readFileSync} from "node:fs"
 import {relative, resolve, sep} from "node:path"
