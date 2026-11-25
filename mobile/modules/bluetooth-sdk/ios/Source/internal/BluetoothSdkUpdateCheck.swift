@@ -136,6 +136,10 @@ final class BluetoothSdkUpdateCheck {
         // Bundle and UserDefaults lookups stay off the caller (often main) thread.
         Self.queue.async { [weak self] in
             guard let self else { return }
+            // AD Glass: an app that turns the SDK's analytics off sends Mentra nothing about this
+            // install. Upstream runs this check regardless, and Core forwards its install id to
+            // Mentra's analytics. All that is lost is a console banner about a newer SDK.
+            if self.bundle.object(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled") as? Bool == true { return }
             let requestBody = self.requestBody()
             guard JSONSerialization.isValidJSONObject(requestBody),
                   let body = try? JSONSerialization.data(withJSONObject: requestBody)

@@ -5,6 +5,7 @@ import {VARIANT_RE, resolveAndroidPackageName} from "./scripts/android-package-n
 import {getBuildNumber} from "./scripts/build-number.mjs"
 import {resolveAppTrack} from "./scripts/app-track.cjs"
 import {backendTarget} from "./scripts/backend-target.cjs"
+import {AD_GLASS, applyAdGlass, isAdGlass} from "./scripts/ad-glass.cjs"
 
 const familyBaseVersion = require("../package.json").version as string
 
@@ -68,10 +69,25 @@ const VARIANTS = {
     icon: "./assets/app-icons/ic_launcher.png",
     adaptiveIcon: "./assets/app-icons/ic_launcher_foreground.png",
   },
+  // AD Glass (docs/ad-glass/spec-phase1.md): our own name, bundle id and icon,
+  // no Firebase and no app links, which only Mentra's Apple team can claim. The
+  // scheme stays Mentra's in phase 1 because their sign-in returns through it.
+  adglass: {
+    appName: AD_GLASS.appName,
+    packageName: AD_GLASS.bundleId,
+    scheme: "com.mentra",
+    appLinks: false,
+    includeFirebase: false,
+    googleServicesFile: null,
+    googleServicesPlist: null,
+    icon: AD_GLASS.icon,
+    adaptiveIcon: AD_GLASS.adaptiveIcon,
+  },
 } as const
 
-const variant =
-  process.env.EXPO_PUBLIC_DEPLOYMENT_REGION === "china"
+const variant = isAdGlass()
+  ? VARIANTS.adglass
+  : process.env.EXPO_PUBLIC_DEPLOYMENT_REGION === "china"
     ? VARIANTS.cn
     : resolveAppTrack() === "dev"
     ? VARIANTS.dev
@@ -141,7 +157,8 @@ module.exports = ({config}: ConfigContext): Partial<ExpoConfig> => {
     MENTRA_APP_AGE_RATING: "12+",
   }
 
-  return withAppLabel(appName)({
+  return withAppLabel(appName)(
+    applyAdGlass({
     ...config,
     extra: packagedExtra,
     // A CI build (PR or release) carries its per-build values here, never in the JS bundle, so packaging can rewrite
@@ -504,5 +521,6 @@ module.exports = ({config}: ConfigContext): Partial<ExpoConfig> => {
       tsconfigPaths: true,
       typedRoutes: true,
     },
-  } as ExpoConfig)
+  } as ExpoConfig),
+  )
 }

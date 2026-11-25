@@ -1996,8 +1996,8 @@ struct ViewState {
         // if the pending wearable is a controller, don't disconnect, use the controller manager to connect
         if ControllerTypes.ALL.contains(pendingWearable) {
             controller?.disconnect()
-            // controller can be nil here: during R1 pairing, disconnectController() runs just before this
-            // call and clears it. Re-create it (as connectDevice does) so connectById is not a silent no-op.
+            // AD Glass (upstream PR 4981): controller can be nil here: during R1 pairing, disconnectController() runs
+            // just before this call and clears it. Re-create it (as connectDevice does) so connectById is not a no-op.
             initController(pendingWearable)
             controller?.connectById(name)
             return

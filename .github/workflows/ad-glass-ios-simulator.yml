@@ -20,6 +20,8 @@ on:
       - "cloud-v2/packages/workspace-contract/**"
       - "package.json"
       - "bun.lock"
+      # mobile/scripts/build-number.mjs imports it.
+      - ".github/scripts/release-family.mjs"
       - ".github/workflows/ad-glass-ios-simulator.yml"
   workflow_dispatch:
 
@@ -40,6 +42,14 @@ jobs:
       SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # Homebrew is not used; keep it from auto-updating if a tool calls it.
       HOMEBREW_NO_AUTO_UPDATE: "1"
+      # Phase 1 still signs in to Mentra's cloud, so the app is pinned to the
+      # environment their store app uses. The repository default is their dev
+      # cloud. The guards below compare against these literals, never against
+      # values read back from a file.
+      CLOUD_CORE: https://core.us-west-2.mentraglass.com
+      CLOUD_RUNTIME: https://runtime.us-west-2.mentraglass.com
+      CLOUD_MINIAPPS: https://miniapps.mentraglass.com/
+      CLOUD_DIRECTORY: https://api.apps.mentraglass.com/
 
     steps:
       - name: Checkout
@@ -81,12 +91,88 @@ jobs:
           ruby --version
           pod --version
 
+      - name: Fork guards (config tests, ring fix, telemetry switches)
+        run: |
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          sdk=mobile/modules/bluetooth-sdk/ios/Source
+
+          node --test mobile/scripts/ad-glass.test.mjs || fail "The AD Glass config tests failed"
+
+          # The R1 ring fix must survive every upstream merge until upstream has
+          # it (their PR 4981): connectByName has to re-create the controller.
+          grep -B4 'controller?.connectById(name)' "$sdk/DeviceManager.swift" \
+            | grep -q 'initController(pendingWearable)' \
+            || fail "The R1 ring fix is missing from DeviceManager.connectByName"
+
+          # The Bluetooth SDK's start-up call to Mentra (it carries a per-install
+          # id that Mentra's Core forwards to their analytics) stays off whenever
+          # the SDK's analytics are off.
+          grep -q 'forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled"' \
+            "$sdk/internal/BluetoothSdkUpdateCheck.swift" \
+            || fail "BluetoothSdkUpdateCheck no longer stops when the SDK's analytics are disabled"
+
+          # One flag gates Mentra's Sentry and Firebase collection in the app.
+          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/officialManifest.ts \
+            || fail "officialManifest.ts no longer sets telemetry: false"
+
+          # app.config.ts must still pass its config through the AD Glass step.
+          grep -q 'applyAdGlass(' mobile/app.config.ts \
+            || fail "mobile/app.config.ts no longer calls applyAdGlass"
+
+          exit "$failed"
+
       - name: Environment file
         working-directory: mobile
         run: |
-          # .env.example carries only public placeholders: a dummy Mapbox token
-          # and Mentra's dev endpoints. Nothing secret is needed to compile.
+          # .env.example carries only public placeholders (a dummy Mapbox token,
+          # an empty Sentry DSN). Nothing secret is needed to compile.
           cp .env.example .env
+
+          # The version the app's JavaScript reports. Without it the app opens
+          # on an "App Version Missing" screen and never runs the cloud's
+          # minimum-version check. Upstream sets it in a script CI does not run.
+          version="$(node -p "require('../package.json').version")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json version '$version' is not a plain x.y.z version"; exit 1
+          fi
+
+          sed \
+            -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_CORE_URL=.*|EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_RUNTIME_URL=.*|EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME|" \
+            -e "s|^EXPO_PUBLIC_MINIAPPS_URL=.*|EXPO_PUBLIC_MINIAPPS_URL=$CLOUD_MINIAPPS|" \
+            -e "s|^EXPO_PUBLIC_DIRECTORY_URL=.*|EXPO_PUBLIC_DIRECTORY_URL=$CLOUD_DIRECTORY|" \
+            .env > .env.tmp
+          mv .env.tmp .env
+          {
+            echo ""
+            echo "EXPO_PUBLIC_MENTRAOS_VERSION=$version"
+            echo "EXPO_PUBLIC_BUILD_COMMIT=${GITHUB_SHA:0:9}"
+            echo "EXPO_PUBLIC_BUILD_BRANCH=$GITHUB_REF_NAME"
+            echo "EXPO_PUBLIC_BUILD_USER=github-actions"
+            echo "EXPO_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%d_%H-%M)"
+          } >> .env
+
+          # Each value must be set exactly once, to exactly what this job pins.
+          # A renamed or duplicated line in upstream's .env.example fails here
+          # instead of shipping an app that talks to the wrong cloud.
+          failed=0
+          want() { # name, value
+            if [ "$(grep -c "^$1=" .env)" != 1 ] || ! grep -q -x -F "$1=$2" .env; then
+              echo "::error::.env must set $1 exactly once, to '$2'"; failed=1
+            fi
+          }
+          want EXPO_PUBLIC_BUILD_ENV prod
+          want EXPO_PUBLIC_CLOUD_CORE_URL "$CLOUD_CORE"
+          want EXPO_PUBLIC_CLOUD_RUNTIME_URL "$CLOUD_RUNTIME"
+          want EXPO_PUBLIC_MINIAPPS_URL "$CLOUD_MINIAPPS"
+          want EXPO_PUBLIC_DIRECTORY_URL "$CLOUD_DIRECTORY"
+          want EXPO_PUBLIC_MENTRAOS_VERSION "$version"
+          # No crash reporting to anyone: the DSN must stay empty.
+          want EXPO_PUBLIC_SENTRY_DSN ""
+          [ "$failed" = 0 ] || exit 1
+
           # Xcode script phases (the JS bundler) inherit this job's environment.
           grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' .env >> "$GITHUB_ENV"
 
@@ -102,6 +188,45 @@ jobs:
         run: |
           rm -rf ios
           bun expo prebuild --platform ios
+
+      - name: Verify the generated project
+        working-directory: mobile/ios
+        run: |
+          # The same identity and telemetry checks as on the built app, made
+          # here as well because this is minutes into the job, not an hour.
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          info=Mentra/Info.plist
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$info" 2>/dev/null || echo "(missing)"; }
+          expect() { # name, wanted
+            actual="$(plist "$1")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected '$2'"
+          }
+          expect CFBundleDisplayName "AD Glass"
+          expect CFBundleName "AD Glass"
+          expect MentraBluetoothSdkAnalyticsDisabled "true"
+          expect FIREBASE_ANALYTICS_COLLECTION_ENABLED "false"
+          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.adglass"?;' Mentra.xcodeproj/project.pbxproj \
+            || fail "The Xcode project does not use the bundle id com.domingueandco.adglass"
+
+          # Every permission prompt names AD Glass. "Mentra Live" is a model of
+          # glasses and may stay; $(PRODUCT_NAME) would be shown as "Mentra".
+          prompts="$(plutil -p "$info" | grep 'UsageDescription" =>' || true)"
+          echo "$prompts"
+          [ -n "$prompts" ] || fail "No permission prompts found in the generated Info.plist"
+          if echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$\(PRODUCT_NAME\)/; END { exit($bad ? 0 : 1) }'; then
+            fail "A permission prompt still names Mentra or the Xcode product"
+          fi
+
+          # No Firebase project file and no Sentry upload step in the project.
+          if find . -path ./Pods -prune -o -name 'GoogleService-Info*.plist' -print | grep -q .; then
+            fail "A Firebase GoogleService-Info plist is in the generated project"
+          fi
+          if grep -q -i -E 'sentry-xcode|sentry-cli' Mentra.xcodeproj/project.pbxproj || [ -f sentry.properties ]; then
+            fail "The generated project still carries Sentry's build integration"
+          fi
+          exit "$failed"
 
       - name: Sherpa on-device speech framework
         working-directory: mobile
@@ -140,11 +265,56 @@ jobs:
           app="build-sim/Build/Products/Release-iphonesimulator/Mentra.app"
           test -d "$app"
           du -sh "$app"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$app/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Info.plist"
-          test -f "$app/main.jsbundle"
-          ls -lh "$app/main.jsbundle"
+          # Every check runs, so one build reports every problem.
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist" 2>/dev/null || echo "(missing)"; }
+          expect() { # name, wanted
+            actual="$(plist "$1")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual', expected '$2'"
+          }
+          # Identity: ours, not Mentra's.
+          expect CFBundleIdentifier "com.domingueandco.adglass"
+          expect CFBundleDisplayName "AD Glass"
+          expect CFBundleName "AD Glass"
+          # The native version and the version the JavaScript reports agree.
+          expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
+          echo "build $(plist CFBundleVersion)"
+
+          # Telemetry: the Bluetooth SDK's PostHog analytics are off, Firebase
+          # collection is off, and no Firebase project file ships in the app.
+          expect MentraBluetoothSdkAnalyticsDisabled "true"
+          expect FIREBASE_ANALYTICS_COLLECTION_ENABLED "false"
+          if find "$app" -name 'GoogleService-Info*.plist' | grep -q .; then
+            fail "A Firebase GoogleService-Info plist is in the app bundle"
+          fi
+
+          # Every permission prompt names AD Glass ("Mentra Live" is a model of
+          # glasses and may stay).
+          prompts="$(plutil -p "$app/Info.plist" | grep 'UsageDescription" =>' || true)"
+          echo "$prompts"
+          [ -n "$prompts" ] || fail "No permission prompts found in the built Info.plist"
+          if echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$\(PRODUCT_NAME\)/; END { exit($bad ? 0 : 1) }'; then
+            fail "A permission prompt still names Mentra"
+          fi
+
+          # Backend: the JavaScript bundle carries the endpoints this job pins.
+          bundle="$app/main.jsbundle"
+          if [ -f "$bundle" ]; then
+            ls -lh "$bundle"
+            for url in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY"; do
+              [ -n "$url" ] || { fail "A pinned backend URL is empty"; continue; }
+              grep -a -q -F "$url" "$bundle" || fail "main.jsbundle does not contain $url"
+            done
+            # No Sentry DSN (https://<32 hex>@<host>.sentry.io/<id>) in the bundle.
+            if grep -a -q -E '[0-9a-f]{32}@[a-z0-9.-]*sentry\.io' "$bundle"; then
+              fail "main.jsbundle contains a Sentry DSN"
+            fi
+          else
+            fail "main.jsbundle is missing from the app"
+          fi
+          exit "$failed"
 
       - name: Show the end of the build log on failure
         if: failure()
