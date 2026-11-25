@@ -14,6 +14,21 @@ import {createOfficialManifest} from "./officialManifest"
  */
 const NO_ACCOUNT_SCREENS = isCloudless(createOfficialManifest())
 
+/**
+ * Settings pages that only make sense with an account or a server behind the app: profile (log out, delete
+ * account), password and email changes, data export, organization, feedback to Mentra. No layout wraps them (they
+ * share a folder with the real settings pages), so the route check is their only guard.
+ */
+const ACCOUNT_SETTINGS_PAGES = new Set([
+  "profile",
+  "change-password",
+  "change-email",
+  "confirm-deletion",
+  "data-export",
+  "workspace",
+  "feedback",
+])
+
 /** Whether this build has account screens at all. Sightline does not. */
 export function hasAccountScreens(): boolean {
   return !NO_ACCOUNT_SCREENS
@@ -37,7 +52,10 @@ export function isAccountRoute(path: string): boolean {
     if (segment === "..") segments.pop()
     else segments.push(segment)
   }
-  return segments[0]?.toLowerCase() === "auth"
+  const [first, second, third] = segments.map((segment) => segment.toLowerCase())
+  if (first === "auth") return true
+  // The account pages inside Settings. Their rows are hidden; this keeps a typed or stale link from opening them.
+  return first === "miniapps" && second === "settings" && ACCOUNT_SETTINGS_PAGES.has(third ?? "")
 }
 
 /** Where a navigation to `path` goes in this build: the boot route instead of any account screen. */

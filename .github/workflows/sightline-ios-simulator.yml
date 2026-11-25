@@ -306,7 +306,7 @@ jobs:
           expect CFBundleName "Sightline"
           expect_bool MentraBluetoothSdkAnalyticsDisabled true
           expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
-          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.sightline"?;' Mentra.xcodeproj/project.pbxproj \
+          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.jpaulgay\.sightline"?;' Mentra.xcodeproj/project.pbxproj \
             || fail "The Xcode project does not use the bundle id com.jpaulgay.sightline"
 
           # Every permission prompt names Sightline. "Mentra Live" is a model of

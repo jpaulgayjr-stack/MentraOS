@@ -73,7 +73,7 @@ enum BluetoothSdkUpdateNotice {
 /// Checks Mentra Core for a newer SDK on every SDK start and, when this SDK is
 /// behind, prints a console banner now and every `reprintInterval` while the SDK
 /// instance lives. The check is one request with a short timeout and no retry;
-/// any failure is silent and changes no SDK behavior. AD Glass: upstream runs it
+/// any failure is silent and changes no SDK behavior. Sightline: upstream runs it
 /// regardless of the analytics setting; in this fork an app that disables the
 /// SDK's analytics in its Info.plist sends no check (see `start()`).
 final class BluetoothSdkUpdateCheck {
@@ -137,7 +137,7 @@ final class BluetoothSdkUpdateCheck {
         // Bundle and UserDefaults lookups stay off the caller (often main) thread.
         Self.queue.async { [weak self] in
             guard let self else { return }
-            // AD Glass: an app that turns the SDK's analytics off sends Mentra nothing about this
+            // Sightline: an app that turns the SDK's analytics off sends Mentra nothing about this
             // install. Upstream runs this check regardless, and Core forwards its install id to
             // Mentra's analytics. All that is lost is a console banner about a newer SDK.
             if self.bundle.object(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled") as? Bool == true { return }
