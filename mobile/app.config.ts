@@ -418,6 +418,13 @@ module.exports = ({config}: ConfigContext): Partial<ExpoConfig> => {
                 podspec: "../podspecs/AzureCommunicationCommon.podspec",
               },
               {
+                // AD Glass: the trunk pod's download host (download.onnxruntime.ai)
+                // is gone. Take the same Microsoft binary from NuGet instead; see
+                // podspecs/onnxruntime-c.podspec.
+                name: "onnxruntime-c",
+                podspec: "../podspecs/onnxruntime-c.podspec",
+              },
+              {
                 name: "FirebaseCore",
                 modular_headers: true,
               },

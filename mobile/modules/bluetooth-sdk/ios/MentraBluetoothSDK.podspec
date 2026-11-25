@@ -26,7 +26,13 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore' if include_expo_adapter
   s.ios.dependency 'SWCompression', '~> 4.8.0'
   s.ios.dependency 'SwiftProtobuf', '~> 1.0'
-  s.ios.dependency 'onnxruntime-objc', '1.18.0'
+  # AD Glass: depend on the C library directly. Upstream asks for
+  # 'onnxruntime-objc', whose only job here is to pull in onnxruntime-c for the
+  # sherpa-onnx static library to link against; no source file uses the
+  # Objective-C API. Both trunk pods download from download.onnxruntime.ai,
+  # which is gone, and only the C library has another official source
+  # (mobile/podspecs/onnxruntime-c.podspec).
+  s.ios.dependency 'onnxruntime-c', '1.18.0'
   s.ios.dependency 'UltraliteSDK'
 
   # Swift/Objective-C compatibility
