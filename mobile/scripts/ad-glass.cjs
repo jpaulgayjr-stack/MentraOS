@@ -24,10 +24,11 @@ const BLUETOOTH_SDK_PLUGIN = "./modules/bluetooth-sdk/app.plugin.js"
 const SPLASH_PLUGIN = "expo-splash-screen"
 // Build-time plugins that exist only to feed a Mentra-owned service.
 const REMOVED_PLUGINS = new Set(["@sentry/react-native/expo"])
-// The Bluetooth SDK asks Mentra Core whether it is out of date only when the
-// app's Info.plist sets this to true (BluetoothSdkUpdateCheck.swift). AD Glass
-// never does.
-const SDK_UPDATE_CHECK_KEY = "MentraBluetoothSdkUpdateCheckEnabled"
+// The URL scheme upstream registers for the Mentra App.
+const UPSTREAM_SCHEME = "com.mentra"
+
+// $(PRODUCT_NAME), ${TARGET_NAME} and the like, as library plugins write them.
+const XCODE_NAME_PLACEHOLDER = /\$[({](?:PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/g
 
 function isAdGlass(env = process.env) {
   return env.AD_GLASS_VARIANT !== "off"
@@ -39,10 +40,50 @@ function isAdGlass(env = process.env) {
  */
 function rebrandText(value) {
   if (typeof value !== "string") return value
-  return value
-    .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
-    .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
-    .replace(/\bMentra\b(?! Live)/g, AD_GLASS.appName)
+  return (
+    value
+      // Xcode expands these to the project's product name, which stays "Mentra".
+      .replace(XCODE_NAME_PLACEHOLDER, AD_GLASS.appName)
+      .replace(/\bMentraOS\b/g, AD_GLASS.appName)
+      .replace(/\bThe Mentra App\b/g, AD_GLASS.appName)
+      .replace(/\bthe Mentra App\b/g, AD_GLASS.appName)
+      .replace(/\bMentra\b(?! Live)/g, AD_GLASS.appName)
+  )
+}
+
+/** Rebrand every permission prompt (`NS...UsageDescription`) in an Info.plist object. */
+function rebrandPrompts(infoPlist) {
+  return mapValues(infoPlist, (key, value) => (/UsageDescription$/.test(key) ? rebrandText(value) : value))
+}
+
+/**
+ * AD Glass's Info.plist: our prompts, the name iOS reports (the Xcode project keeps upstream's), and our URL scheme
+ * in place of upstream's.
+ */
+function adGlassInfoPlist(infoPlist, upstreamSchemes = [UPSTREAM_SCHEME]) {
+  const plist = rebrandPrompts(infoPlist)
+  return {
+    ...plist,
+    CFBundleName: AD_GLASS.appName,
+    CFBundleURLTypes: adGlassUrlTypes(plist.CFBundleURLTypes, [...upstreamSchemes, UPSTREAM_SCHEME]),
+  }
+}
+
+/**
+ * Library plugins (expo-camera, expo-location, ...) write their own default
+ * prompts, such as "Allow $(PRODUCT_NAME) to access your camera", while the
+ * native project is generated: after applyAdGlass has run. This plugin applies
+ * adGlassInfoPlist again at that point. applyAdGlass lists it first and last
+ * because the order in which Expo runs such steps is Expo's business, and
+ * rewriting twice is harmless. Expo is loaded here, not at the top, so the unit
+ * tests run before dependencies are installed.
+ */
+function withAdGlassInfoPlist(config) {
+  const {withInfoPlist} = require("expo/config-plugins")
+  return withInfoPlist(config, (mod) => {
+    mod.modResults = adGlassInfoPlist(mod.modResults)
+    return mod
+  })
 }
 
 /** Replace upstream's URL scheme with ours in the Info.plist URL types. Other schemes (msauth...) are kept. */
@@ -55,7 +96,7 @@ function adGlassUrlTypes(urlTypes, upstreamSchemes) {
   }))
   const schemes = types.flatMap((type) => type.CFBundleURLSchemes)
   // Fail the build rather than ship an app that answers Mentra's links.
-  const leftover = schemes.filter((scheme) => scheme === "com.mentra" || scheme.startsWith("com.mentra."))
+  const leftover = schemes.filter((scheme) => scheme === UPSTREAM_SCHEME || scheme.startsWith(`${UPSTREAM_SCHEME}.`))
   if (leftover.length > 0) {
     throw new Error(`[ad-glass] Info.plist still registers a Mentra URL scheme: ${leftover.join(", ")}`)
   }
@@ -72,14 +113,16 @@ function pluginName(plugin) {
 }
 
 function adGlassPlugin(plugin) {
+  if (pluginName(plugin) === BLUETOOTH_SDK_PLUGIN) {
+    // The SDK's usage analytics post to Mentra's PostHog project and are on by
+    // default, whatever the app's own telemetry policy says. Off even when
+    // upstream lists the plugin with no options, as [name] or as a bare string.
+    const options = Array.isArray(plugin) ? plugin[1] : undefined
+    return [BLUETOOTH_SDK_PLUGIN, {...(options && typeof options === "object" ? options : {}), analytics: false}]
+  }
   if (!Array.isArray(plugin)) return plugin
   const [name, options] = plugin
   if (!options || typeof options !== "object") return plugin
-  if (name === BLUETOOTH_SDK_PLUGIN) {
-    // The SDK's usage analytics post to Mentra's PostHog project and are on by
-    // default, whatever the app's own telemetry policy says.
-    return [name, {...options, analytics: false}]
-  }
   if (name === SPLASH_PLUGIN) {
     return [
       name,
@@ -101,9 +144,9 @@ function applyAdGlass(config, env = process.env) {
 
   const plugins = config.plugins ?? []
   // Fail the build, not the privacy promise, if upstream moves the plugin.
-  if (!plugins.some((plugin) => pluginName(plugin) === BLUETOOTH_SDK_PLUGIN && Array.isArray(plugin))) {
+  if (!plugins.some((plugin) => pluginName(plugin) === BLUETOOTH_SDK_PLUGIN)) {
     throw new Error(
-      `[ad-glass] ${BLUETOOTH_SDK_PLUGIN} is not in the plugin list with options: its analytics cannot be turned off. ` +
+      `[ad-glass] ${BLUETOOTH_SDK_PLUGIN} is not in the plugin list: its analytics cannot be turned off. ` +
         "Update mobile/scripts/ad-glass.cjs to match app.config.ts.",
     )
   }
@@ -112,9 +155,6 @@ function applyAdGlass(config, env = process.env) {
   // workflow; an unsigned build has none.
   const {appleTeamId: _upstreamTeamId, ...ios} = config.ios ?? {}
   const teamId = env.ADGLASS_APPLE_TEAM_ID?.trim()
-  const {[SDK_UPDATE_CHECK_KEY]: _sdkUpdateCheck, ...infoPlist} = mapValues(ios.infoPlist ?? {}, (key, value) =>
-    /UsageDescription$/.test(key) ? rebrandText(value) : value,
-  )
   const upstreamSchemes = [config.scheme].flat().filter((scheme) => typeof scheme === "string")
 
   // Upstream packages the Core URL of the build environment here. Nothing
@@ -128,15 +168,22 @@ function applyAdGlass(config, env = process.env) {
     ios: {
       ...ios,
       ...(teamId ? {appleTeamId: teamId} : {}),
-      infoPlist: {
-        ...infoPlist,
-        // The Xcode project keeps upstream's name; this is the name iOS reports.
-        CFBundleName: AD_GLASS.appName,
-        CFBundleURLTypes: adGlassUrlTypes(infoPlist.CFBundleURLTypes, upstreamSchemes),
-      },
+      infoPlist: adGlassInfoPlist(ios.infoPlist ?? {}, upstreamSchemes),
     },
-    plugins: plugins.filter((plugin) => !REMOVED_PLUGINS.has(pluginName(plugin))).map(adGlassPlugin),
+    plugins: [
+      withAdGlassInfoPlist,
+      ...plugins.filter((plugin) => !REMOVED_PLUGINS.has(pluginName(plugin))).map(adGlassPlugin),
+      withAdGlassInfoPlist,
+    ],
   }
 }
 
-module.exports = {AD_GLASS, SDK_UPDATE_CHECK_KEY, isAdGlass, applyAdGlass, rebrandText}
+module.exports = {
+  AD_GLASS,
+  isAdGlass,
+  applyAdGlass,
+  adGlassInfoPlist,
+  rebrandText,
+  rebrandPrompts,
+  withAdGlassInfoPlist,
+}

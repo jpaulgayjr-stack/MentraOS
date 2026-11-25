@@ -4,7 +4,15 @@ import {createRequire} from "node:module"
 import {test} from "node:test"
 
 const require = createRequire(import.meta.url)
-const {AD_GLASS, SDK_UPDATE_CHECK_KEY, applyAdGlass, isAdGlass, rebrandText} = require("./ad-glass.cjs")
+const {
+  AD_GLASS,
+  adGlassInfoPlist,
+  applyAdGlass,
+  isAdGlass,
+  rebrandPrompts,
+  rebrandText,
+  withAdGlassInfoPlist,
+} = require("./ad-glass.cjs")
 const {resolveAndroidPackageName} = require("./android-package-name.cjs")
 
 const BLUETOOTH = "./modules/bluetooth-sdk/app.plugin.js"
@@ -102,8 +110,42 @@ test("the build fails if the Bluetooth SDK plugin can no longer be found", () =>
   const config = upstreamConfig()
   config.plugins = config.plugins.filter((plugin) => !(Array.isArray(plugin) && plugin[0] === BLUETOOTH))
   assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
-  config.plugins.push(BLUETOOTH)
-  assert.throws(() => applyAdGlass(config, {}), /analytics cannot be turned off/)
+})
+
+test("Bluetooth SDK analytics are off even when upstream passes the plugin no options", () => {
+  const isBluetooth = (plugin) => Array.isArray(plugin) && plugin[0] === BLUETOOTH
+  for (const bare of [[BLUETOOTH], BLUETOOTH]) {
+    const config = upstreamConfig()
+    config.plugins = config.plugins.map((plugin) => (isBluetooth(plugin) ? bare : plugin))
+    const bluetooth = applyAdGlass(config, {}).plugins.filter(isBluetooth)
+    assert.deepEqual(bluetooth, [[BLUETOOTH, {analytics: false}]])
+  }
+})
+
+test("prompts that name the Xcode product, which stays Mentra, are ours too", () => {
+  const config = upstreamConfig()
+  config.plugins.push(["expo-camera", {cameraPermission: "Allow $(PRODUCT_NAME) to access your camera"}])
+  const {plugins} = applyAdGlass(config, {})
+  const camera = plugins.find((plugin) => Array.isArray(plugin) && plugin[0] === "expo-camera")
+  assert.equal(camera[1].cameraPermission, "Allow AD Glass to access your camera")
+  // What a library plugin writes on its own while the native project is generated.
+  assert.deepEqual(
+    rebrandPrompts({
+      NSLocationAlwaysUsageDescription: "Allow $(PRODUCT_NAME) to use your location",
+      NSContactsUsageDescription: "Allow ${PRODUCT_NAME} or $(TARGET_NAME) to read contacts for MentraOS",
+      NSLocalNetworkUsageDescription: "Mentra talks to Mentra Live glasses.",
+      CFBundleName: "Mentra",
+    }),
+    {
+      NSLocationAlwaysUsageDescription: "Allow AD Glass to use your location",
+      NSContactsUsageDescription: "Allow AD Glass or AD Glass to read contacts for AD Glass",
+      NSLocalNetworkUsageDescription: "AD Glass talks to Mentra Live glasses.",
+      CFBundleName: "Mentra",
+    },
+  )
+  // The native-project pass is registered on both sides of every other plugin.
+  assert.equal(plugins[0], withAdGlassInfoPlist)
+  assert.equal(plugins.at(-1), withAdGlassInfoPlist)
 })
 
 test("the URL scheme is adglass, and Mentra's is gone", () => {
@@ -127,15 +169,26 @@ test("the build fails if a Mentra URL scheme would still be registered", () => {
   assert.throws(() => applyAdGlass(config, {}), /still registers a Mentra URL scheme: com\.mentra\.dev/)
 })
 
-test("the Bluetooth SDK update check is never switched on", () => {
-  const config = upstreamConfig()
-  config.ios.infoPlist[SDK_UPDATE_CHECK_KEY] = true
-  assert.equal(SDK_UPDATE_CHECK_KEY in applyAdGlass(config, {}).ios.infoPlist, false)
-  assert.equal(SDK_UPDATE_CHECK_KEY in applyAdGlass(upstreamConfig(), {}).ios.infoPlist, false)
-})
-
 test("no Core address is packaged in the app's config", () => {
   const {extra} = applyAdGlass(upstreamConfig(), {})
   assert.deepEqual(extra, {MENTRA_APP_AGE_RATING: "12+"})
   assert.equal(JSON.stringify(applyAdGlass(upstreamConfig(), {})).includes("core.example"), false)
+})
+
+test("the Info.plist pass that runs while the native project is generated enforces the scheme too", () => {
+  // What a library plugin or Expo itself could have written by then.
+  const generated = {
+    NSCameraUsageDescription: "Allow $(PRODUCT_NAME) to access your camera",
+    CFBundleURLTypes: [{CFBundleURLSchemes: ["com.mentra"]}, {CFBundleURLSchemes: ["msauth.x"]}],
+  }
+  const plist = adGlassInfoPlist(generated)
+  assert.deepEqual(plist.CFBundleURLTypes, [{CFBundleURLSchemes: ["adglass"]}, {CFBundleURLSchemes: ["msauth.x"]}])
+  assert.equal(plist.NSCameraUsageDescription, "Allow AD Glass to access your camera")
+  assert.equal(plist.CFBundleName, "AD Glass")
+  // Applying it again changes nothing.
+  assert.deepEqual(adGlassInfoPlist(plist), plist)
+  assert.throws(
+    () => adGlassInfoPlist({CFBundleURLTypes: [{CFBundleURLSchemes: ["com.mentra.dev"]}]}),
+    /still registers a Mentra URL scheme/,
+  )
 })

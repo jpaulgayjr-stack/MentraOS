@@ -27,6 +27,8 @@ on:
       - "cloud-v2/packages/workspace-contract/**"
       - "package.json"
       - "bun.lock"
+      # mobile/scripts/build-number.mjs imports it.
+      - ".github/scripts/release-family.mjs"
       - ".github/workflows/ad-glass-ios-simulator.yml"
   workflow_dispatch:
     inputs:
@@ -64,21 +66,13 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Fork guards (config, hostnames, ring fix, SDK update check)
+      - name: Fork guards (config, hostnames, scripts, engine)
         run: |
           node --test mobile/scripts/ad-glass.test.mjs mobile/scripts/ad-glass-hosts.test.mjs mobile/scripts/ad-glass-jest-gate.test.mjs
           python3 -m py_compile mobile/scripts/ad-glass-sim/sinkhole.py mobile/scripts/ad-glass-sim/pick-simulator.py mobile/scripts/ad-glass-sim/sinkhole-hosts.py
           bash -n mobile/scripts/ad-glass-sim/boot.sh
-          # The R1 ring fix must survive every upstream merge until upstream has
-          # it (their PR 4981): connectByName has to re-create the controller.
-          grep -B4 'controller?.connectById(name)' mobile/modules/bluetooth-sdk/ios/Source/DeviceManager.swift \
-            | grep -q 'initController(pendingWearable)' \
-            || { echo "::error::The R1 ring fix is missing from DeviceManager.connectByName"; exit 1; }
-          # The Bluetooth SDK's update check posts to Mentra Core at a
-          # hard-coded address. It must stay opt-in, and AD Glass never opts in.
-          grep -A2 'func start() {' mobile/modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift \
-            | grep -q 'guard Self.isEnabledByHost(bundle) else { return }' \
-            || { echo "::error::BluetoothSdkUpdateCheck.start() no longer requires the host's opt-in"; exit 1; }
+          # (The ring fix and the Bluetooth SDK's start-up call to Mentra are
+          # guarded, and the latter tested by running it, in the macOS job.)
           # The engine builds no cloud client when Core and Runtime are null.
           grep -A6 '^function construct(): void {' mobile/modules/engine/src/services/CloudClientService.ts \
             | grep -q 'if (isCloudlessConfig(getConfigValues())) return' \
@@ -121,6 +115,15 @@ jobs:
       SENTRY_DISABLE_AUTO_UPLOAD: "true"
       # Homebrew is not used; keep it from auto-updating if a tool calls it.
       HOMEBREW_NO_AUTO_UPDATE: "1"
+      # AD Glass has no backend (phase 2). These are canaries, not servers: if
+      # any code still read the build environment for a cloud address, the
+      # canary would be compiled into the app, and "Verify the built app" fails
+      # on finding one. The guards compare against these literals, never
+      # against values read back from a file.
+      CLOUD_CORE: https://adglass-canary-core.invalid
+      CLOUD_RUNTIME: https://adglass-canary-runtime.invalid
+      CLOUD_MINIAPPS: https://adglass-canary-miniapps.invalid/
+      CLOUD_DIRECTORY: https://adglass-canary-directory.invalid/
 
     steps:
       - name: Checkout
@@ -162,31 +165,108 @@ jobs:
           ruby --version
           pod --version
 
+      - name: Fork guards (config tests, ring fix, telemetry switches)
+        run: |
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          sdk=mobile/modules/bluetooth-sdk/ios/Source
+
+          node --test mobile/scripts/ad-glass.test.mjs || fail "The AD Glass config tests failed"
+
+          # The R1 ring fix must survive every upstream merge until upstream has
+          # it (their PR 4981): connectByName has to re-create the controller.
+          grep -B4 'controller?.connectById(name)' "$sdk/DeviceManager.swift" \
+            | grep -q 'initController(pendingWearable)' \
+            || fail "The R1 ring fix is missing from DeviceManager.connectByName"
+
+          # The Bluetooth SDK's start-up call to Mentra (it carries a per-install
+          # id that Mentra's Core forwards to their analytics) stays off whenever
+          # the SDK's analytics are off.
+          # The next step tests the behaviour; this only says so in plain words
+          # when a merge has dropped the line.
+          grep -q -E '^[[:space:]]*if self\.bundle\.object\(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled"\) as\? Bool == true \{ return \}' \
+            "$sdk/internal/BluetoothSdkUpdateCheck.swift" \
+            || fail "BluetoothSdkUpdateCheck no longer stops when the SDK's analytics are disabled"
+
+          # One flag gates Mentra's Sentry and Firebase collection in the app.
+          grep -q -E '^[[:space:]]*telemetry: false,[[:space:]]*$' mobile/src/services/deployment/adGlassManifest.ts \
+            || fail "adGlassManifest.ts no longer sets telemetry: false"
+
+          # app.config.ts must still pass its config through the AD Glass step.
+          grep -q 'applyAdGlass(' mobile/app.config.ts \
+            || fail "mobile/app.config.ts no longer calls applyAdGlass"
+
+          exit "$failed"
+
+      - name: Bluetooth SDK tests for the fork's change
+        # Proves, by running it, that an app with the SDK's analytics disabled
+        # sends no update check to Mentra, and that the test can tell.
+        run: |
+          set -o pipefail
+          swift test --package-path mobile/modules/bluetooth-sdk --filter BluetoothSdkUpdateCheckTests 2>&1 \
+            | tee "$RUNNER_TEMP/sdk-tests.log"
+          # swift test also succeeds when the filter matches nothing, so name
+          # the fork's two tests: both must have run and passed.
+          for name in testAppThatDisablesSdkAnalyticsSendsNoUpdateCheck testAppThatKeepsSdkAnalyticsStillSendsTheUpdateCheck; do
+            grep -q -F "$name]' passed" "$RUNNER_TEMP/sdk-tests.log" \
+              || { echo "::error::The Bluetooth SDK test $name did not run and pass"; exit 1; }
+          done
+
       - name: Environment file
         working-directory: mobile
-        env:
-          # AD Glass has no backend. These are canaries, not servers: if any
-          # code still read the build environment for a cloud address, the
-          # canary would be compiled into the app, and "Verify the built app"
-          # fails on finding one.
-          CLOUD_CORE: https://adglass-canary-core.invalid
-          CLOUD_RUNTIME: https://adglass-canary-runtime.invalid
-          CLOUD_MINIAPPS: https://adglass-canary-miniapps.invalid/
-          CLOUD_DIRECTORY: https://adglass-canary-directory.invalid/
         run: |
           # .env.example carries only public placeholders (a dummy Mapbox token,
           # an empty Sentry DSN). Nothing secret is needed to compile.
           cp .env.example .env
-          sed -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|" \
-              -e "s|^EXPO_PUBLIC_CLOUD_CORE_URL=.*|EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE|" \
-              -e "s|^EXPO_PUBLIC_CLOUD_RUNTIME_URL=.*|EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME|" \
-              -e "s|^EXPO_PUBLIC_MINIAPPS_URL=.*|EXPO_PUBLIC_MINIAPPS_URL=$CLOUD_MINIAPPS|" \
-              -e "s|^EXPO_PUBLIC_DIRECTORY_URL=.*|EXPO_PUBLIC_DIRECTORY_URL=$CLOUD_DIRECTORY|" \
-              .env > .env.tmp && mv .env.tmp .env
+
+          # The version the app's JavaScript reports. Without it the app opens
+          # on an "App Version Missing" screen and never runs the cloud's
+          # minimum-version check. Upstream sets it in a script CI does not run.
+          version="$(node -p "require('../package.json').version")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json version '$version' is not a plain x.y.z version"; exit 1
+          fi
+
+          for pinned in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY"; do
+            if [ -z "$pinned" ]; then echo "::error::A pinned backend URL (CLOUD_*) is empty"; exit 1; fi
+          done
+
+          sed \
+            -e "s|^EXPO_PUBLIC_BUILD_ENV=.*|EXPO_PUBLIC_BUILD_ENV=prod|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_CORE_URL=.*|EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE|" \
+            -e "s|^EXPO_PUBLIC_CLOUD_RUNTIME_URL=.*|EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME|" \
+            -e "s|^EXPO_PUBLIC_MINIAPPS_URL=.*|EXPO_PUBLIC_MINIAPPS_URL=$CLOUD_MINIAPPS|" \
+            -e "s|^EXPO_PUBLIC_DIRECTORY_URL=.*|EXPO_PUBLIC_DIRECTORY_URL=$CLOUD_DIRECTORY|" \
+            .env > .env.tmp
+          mv .env.tmp .env
+          {
+            echo ""
+            echo "EXPO_PUBLIC_MENTRAOS_VERSION=$version"
+            echo "EXPO_PUBLIC_BUILD_COMMIT=${GITHUB_SHA:0:9}"
+            echo "EXPO_PUBLIC_BUILD_BRANCH=$GITHUB_REF_NAME"
+            echo "EXPO_PUBLIC_BUILD_USER=github-actions"
+            echo "EXPO_PUBLIC_BUILD_TIME=$(date -u +%Y-%m-%d_%H-%M)"
+          } >> .env
+
+          # Each value must be set exactly once, to exactly what this job pins.
+          # A renamed or duplicated line in upstream's .env.example fails here
+          # instead of shipping an app that talks to the wrong cloud.
+          failed=0
+          want() { # name, value
+            if [ "$(grep -c "^$1=" .env)" != 1 ] || ! grep -q -x -F "$1=$2" .env; then
+              echo "::error::.env must set $1 exactly once, to '$2'"; failed=1
+            fi
+          }
+          want EXPO_PUBLIC_BUILD_ENV prod
+          want EXPO_PUBLIC_CLOUD_CORE_URL "$CLOUD_CORE"
+          want EXPO_PUBLIC_CLOUD_RUNTIME_URL "$CLOUD_RUNTIME"
+          want EXPO_PUBLIC_MINIAPPS_URL "$CLOUD_MINIAPPS"
+          want EXPO_PUBLIC_DIRECTORY_URL "$CLOUD_DIRECTORY"
+          want EXPO_PUBLIC_MENTRAOS_VERSION "$version"
           # No crash reporting to anyone: the DSN must stay empty.
-          grep -q '^EXPO_PUBLIC_SENTRY_DSN=$' .env
-          grep -q "^EXPO_PUBLIC_CLOUD_CORE_URL=$CLOUD_CORE\$" .env
-          grep -q "^EXPO_PUBLIC_CLOUD_RUNTIME_URL=$CLOUD_RUNTIME\$" .env
+          want EXPO_PUBLIC_SENTRY_DSN ""
+          [ "$failed" = 0 ] || exit 1
+
           # Xcode script phases (the JS bundler) inherit this job's environment.
           grep -E '^EXPO_PUBLIC_[A-Z0-9_]+=' .env >> "$GITHUB_ENV"
 
@@ -203,12 +283,59 @@ jobs:
           rm -rf ios
           bun expo prebuild --platform ios
 
+      - name: Verify the generated project
+        working-directory: mobile/ios
+        run: |
+          # The same identity and telemetry checks as on the built app, made
+          # here as well because this is minutes into the job, not an hour.
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          info=Mentra/Info.plist
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$info" 2>/dev/null || echo "(missing)"; }
+          expect() { # name, wanted
+            actual="$(plist "$1")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected '$2'"
+          }
+          expect_bool() { # name, wanted. The SDK reads a real boolean; the string "true" would not count.
+            actual="$(plutil -extract "$1" raw -expect bool -o - "$info" 2>/dev/null || echo "(missing or not a boolean)")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual' in the generated Info.plist, expected the boolean $2"
+          }
+          expect CFBundleDisplayName "AD Glass"
+          expect CFBundleName "AD Glass"
+          expect_bool MentraBluetoothSdkAnalyticsDisabled true
+          expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
+          grep -q -E 'PRODUCT_BUNDLE_IDENTIFIER = "?com\.domingueandco\.adglass"?;' Mentra.xcodeproj/project.pbxproj \
+            || fail "The Xcode project does not use the bundle id com.domingueandco.adglass"
+
+          # Every permission prompt names AD Glass. "Mentra Live" is a model of
+          # glasses and may stay; $(PRODUCT_NAME) and the like would be shown as
+          # "Mentra". perl exits 0 only when it ran and found nothing.
+          prompts="$(plutil -p "$info" | grep 'UsageDescription" =>' || true)"
+          echo "$prompts"
+          [ -n "$prompts" ] || fail "No permission prompts found in the generated Info.plist"
+          if ! echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$[({](PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/; END { exit($bad ? 1 : 0) }'; then
+            fail "A permission prompt still names Mentra or the Xcode product"
+          fi
+
+          # No Firebase project file and no Sentry upload step in the project.
+          if find . -path ./Pods -prune -o -name 'GoogleService-Info*.plist' -print | grep -q .; then
+            fail "A Firebase GoogleService-Info plist is in the generated project"
+          fi
+          if grep -q -i -E 'sentry-xcode|sentry-cli' Mentra.xcodeproj/project.pbxproj || [ -f sentry.properties ]; then
+            fail "The generated project still carries Sentry's build integration"
+          fi
+          exit "$failed"
+
       - name: Sherpa on-device speech framework
         working-directory: mobile
         run: |
           chmod +x scripts/setup-sherpa-onnx-optional.sh
           ./scripts/setup-sherpa-onnx-optional.sh
 
+      # No pod cache, on purpose (docs/ad-glass/spec-phase1.md, section 8): a
+      # restored Pods folder is state the source no longer describes.
       - name: CocoaPods
         working-directory: mobile/ios
         run: pod install
@@ -240,59 +367,91 @@ jobs:
           app="build-sim/Build/Products/Release-iphonesimulator/Mentra.app"
           test -d "$app"
           du -sh "$app"
-          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist"; }
-          expect() { # name, actual, wanted
-            echo "$1 = $2"
-            [ "$2" = "$3" ] || { echo "::error::$1 is '$2', expected '$3'"; exit 1; }
+          # Every check runs, so one build reports every problem.
+          failed=0
+          fail() { echo "::error::$1"; failed=1; }
+          plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist" 2>/dev/null || echo "(missing)"; }
+          expect() { # name, wanted
+            actual="$(plist "$1")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual', expected '$2'"
+          }
+          expect_bool() { # name, wanted. The SDK reads a real boolean; the string "true" would not count.
+            actual="$(plutil -extract "$1" raw -expect bool -o - "$app/Info.plist" 2>/dev/null || echo "(missing or not a boolean)")"
+            echo "$1 = $actual"
+            [ "$actual" = "$2" ] || fail "$1 is '$actual', expected the boolean $2"
           }
           # Identity: ours, not Mentra's.
-          expect CFBundleIdentifier "$(plist CFBundleIdentifier)" "com.domingueandco.adglass"
-          expect CFBundleDisplayName "$(plist CFBundleDisplayName)" "AD Glass"
-          expect CFBundleName "$(plist CFBundleName)" "AD Glass"
-          echo "version $(plist CFBundleShortVersionString) build $(plist CFBundleVersion)"
-          # Telemetry: the Bluetooth SDK's PostHog analytics are off, and no
-          # Firebase project file ships in the app.
-          expect MentraBluetoothSdkAnalyticsDisabled "$(plist MentraBluetoothSdkAnalyticsDisabled)" "true"
+          expect CFBundleIdentifier "com.domingueandco.adglass"
+          expect CFBundleDisplayName "AD Glass"
+          expect CFBundleName "AD Glass"
+          # The native version and the version the JavaScript reports agree.
+          expect CFBundleShortVersionString "$EXPO_PUBLIC_MENTRAOS_VERSION"
+          echo "build $(plist CFBundleVersion)"
+
+          # Telemetry: the Bluetooth SDK's PostHog analytics are off, Firebase
+          # collection is off, and no Firebase project file ships in the app.
+          expect_bool MentraBluetoothSdkAnalyticsDisabled true
+          expect_bool FIREBASE_ANALYTICS_COLLECTION_ENABLED false
           if find "$app" -name 'GoogleService-Info*.plist' | grep -q .; then
-            echo "::error::A Firebase GoogleService-Info plist is in the app bundle"; exit 1
+            fail "A Firebase GoogleService-Info plist is in the app bundle"
           fi
-          if plist NSMicrophoneUsageDescription | grep -q "Mentra App"; then
-            echo "::error::Permission prompts still name the Mentra App"; exit 1
+
+          # Every permission prompt names AD Glass ("Mentra Live" is a model of
+          # glasses and may stay).
+          prompts="$(plutil -p "$app/Info.plist" | grep 'UsageDescription" =>' || true)"
+          echo "$prompts"
+          [ -n "$prompts" ] || fail "No permission prompts found in the built Info.plist"
+          if ! echo "$prompts" | perl -ne '$bad = 1 if /Mentra(?! Live)/ || /\$[({](PRODUCT_NAME|TARGET_NAME|EXECUTABLE_NAME)[)}]/; END { exit($bad ? 1 : 0) }'; then
+            fail "A permission prompt still names Mentra"
           fi
-          # The Bluetooth SDK's update check to Mentra Core is opt-in. No opt-in.
-          if plist MentraBluetoothSdkUpdateCheckEnabled > /dev/null 2>&1; then
-            echo "::error::Info.plist sets MentraBluetoothSdkUpdateCheckEnabled"; exit 1
-          fi
+
           # URL scheme: adglass, and nothing of Mentra's.
-          schemes="$(plutil -extract CFBundleURLTypes json -o - "$app/Info.plist" \
-            | python3 -c 'import json,sys; print(" ".join(s for t in json.load(sys.stdin) for s in t.get("CFBundleURLSchemes", [])))')"
+          schemes="$(plutil -extract CFBundleURLTypes json -o - "$app/Info.plist" 2>/dev/null \
+            | python3 -c 'import json,sys; print(" ".join(s for t in json.load(sys.stdin) for s in t.get("CFBundleURLSchemes", [])))' || true)"
           echo "URL schemes: $schemes"
-          echo " $schemes " | grep -q " adglass " || { echo "::error::The adglass URL scheme is not registered"; exit 1; }
+          echo " $schemes " | grep -q " adglass " || fail "The adglass URL scheme is not registered"
           if echo " $schemes " | grep -q -E " com\.mentra(\.[a-z.]+)? "; then
-            echo "::error::A Mentra URL scheme is still registered: $schemes"; exit 1
+            fail "A Mentra URL scheme is still registered: $schemes"
           fi
+
           # Backend: none. The embedded deployment is the local one, and no cloud
-          # address from the build environment (the canaries) is in the
-          # JavaScript bundle or in the packaged Expo config.
-          test -f "$app/main.jsbundle"
-          ls -lh "$app/main.jsbundle"
-          grep -a -q -F "ad-glass-local" "$app/main.jsbundle" \
-            || { echo "::error::main.jsbundle does not contain the ad-glass-local deployment"; exit 1; }
-          for canary in "$EXPO_PUBLIC_CLOUD_CORE_URL" "$EXPO_PUBLIC_CLOUD_RUNTIME_URL" "$EXPO_PUBLIC_MINIAPPS_URL" "$EXPO_PUBLIC_DIRECTORY_URL" "adglass-canary"; do
-            test -n "$canary"
-            if grep -a -q -F "$canary" "$app/main.jsbundle"; then
-              echo "::error::main.jsbundle contains $canary: something still reads a cloud address from the build environment"; exit 1
+          # address from the build environment (the canaries this job pins) is
+          # in the JavaScript bundle, the packaged Expo config, or any other file
+          # in the app.
+          bundle="$app/main.jsbundle"
+          if [ -f "$bundle" ]; then
+            ls -lh "$bundle"
+            grep -a -q -F "ad-glass-local" "$bundle" \
+              || fail "main.jsbundle does not contain the ad-glass-local deployment"
+            for canary in "$CLOUD_CORE" "$CLOUD_RUNTIME" "$CLOUD_MINIAPPS" "$CLOUD_DIRECTORY" "adglass-canary"; do
+              [ -n "$canary" ] || { fail "A canary address (CLOUD_*) is empty"; continue; }
+              if grep -a -q -F "$canary" "$bundle"; then
+                fail "main.jsbundle contains $canary: something still reads a cloud address from the build environment"
+              fi
+            done
+            # No Sentry DSN (https://<32 hex>@<host>.sentry.io/<id>) in the bundle.
+            # The one key excluded is the sample DSN in a source comment of
+            # Sentry's own SDK (diagnose-sdk.js). Hermes drops comments today;
+            # the exclusion keeps the guard honest if the bundle ever stops
+            # being bytecode.
+            if grep -a -o -E '[0-9a-f]{32}@[a-z0-9.-]*sentry\.io' "$bundle" | grep -v '^c1dfb07d783ad5325c245c1fd3725390@' | grep -q .; then
+              fail "main.jsbundle contains a Sentry DSN"
             fi
-          done
+          else
+            fail "main.jsbundle is missing from the app"
+          fi
           config="$(find "$app" -name app.config | head -1)"
-          test -f "$config" || { echo "::error::The packaged Expo config (app.config) was not found in the app"; exit 1; }
-          if grep -a -q -F "adglass-canary" "$config" || grep -a -q -i -E "mentraglass\.(com|cn)|mentra\.glass" "$config"; then
-            echo "::error::The packaged Expo config names a cloud host"; exit 1
+          if [ -z "$config" ] || [ ! -f "$config" ]; then
+            fail "The packaged Expo config (app.config) was not found in the app"
+          elif grep -a -q -i -E "mentraglass\.(com|cn)|mentra\.glass" "$config"; then
+            fail "The packaged Expo config names a Mentra host"
           fi
-          # Nothing else in the bundle carries a canary either (plists, JSON).
-          if grep -r -a -l -F "adglass-canary" "$app" | grep -q .; then
-            echo "::error::A file in the app bundle contains a canary address:"; grep -r -a -l -F "adglass-canary" "$app"; exit 1
+          carriers="$(grep -r -a -l -F "adglass-canary" "$app" || true)"
+          if [ -n "$carriers" ]; then
+            fail "A file in the app bundle contains a canary address: $(echo "$carriers" | tr '\n' ' ')"
           fi
+          exit "$failed"
 
       - name: Package the built app for the boot job
         working-directory: mobile/ios/build-sim/Build/Products/Release-iphonesimulator

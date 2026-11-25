@@ -73,8 +73,9 @@ enum BluetoothSdkUpdateNotice {
 /// Checks Mentra Core for a newer SDK on every SDK start and, when this SDK is
 /// behind, prints a console banner now and every `reprintInterval` while the SDK
 /// instance lives. The check is one request with a short timeout and no retry;
-/// any failure is silent and changes no SDK behavior. It runs regardless of the
-/// analytics setting.
+/// any failure is silent and changes no SDK behavior. AD Glass: upstream runs it
+/// regardless of the analytics setting; in this fork an app that disables the
+/// SDK's analytics in its Info.plist sends no check (see `start()`).
 final class BluetoothSdkUpdateCheck {
     /// Posts the JSON body and completes with the 200 response body, or nil on any failure.
     typealias Transport = @Sendable (_ body: Data, _ completion: @escaping @Sendable (Data?) -> Void) -> Void
@@ -131,21 +132,15 @@ final class BluetoothSdkUpdateCheck {
         return !trimmed.isEmpty && trimmed != "unknown"
     }
 
-    /// AD Glass: the host app must ask for this check. It posts the app's identity to Mentra Core at a hard-coded
-    /// address, so here it runs only when Info.plist sets `MentraBluetoothSdkUpdateCheckEnabled` to true. AD Glass
-    /// never sets it. Upstream runs the check unconditionally.
-    static let enabledInfoKey = "MentraBluetoothSdkUpdateCheckEnabled"
-
-    static func isEnabledByHost(_ bundle: Bundle) -> Bool {
-        bundle.object(forInfoDictionaryKey: enabledInfoKey) as? Bool == true
-    }
-
     func start() {
-        guard Self.isEnabledByHost(bundle) else { return }
         guard Self.isCheckable(sdkVersion) else { return }
         // Bundle and UserDefaults lookups stay off the caller (often main) thread.
         Self.queue.async { [weak self] in
             guard let self else { return }
+            // AD Glass: an app that turns the SDK's analytics off sends Mentra nothing about this
+            // install. Upstream runs this check regardless, and Core forwards its install id to
+            // Mentra's analytics. All that is lost is a console banner about a newer SDK.
+            if self.bundle.object(forInfoDictionaryKey: "MentraBluetoothSdkAnalyticsDisabled") as? Bool == true { return }
             let requestBody = self.requestBody()
             guard JSONSerialization.isValidJSONObject(requestBody),
                   let body = try? JSONSerialization.data(withJSONObject: requestBody)

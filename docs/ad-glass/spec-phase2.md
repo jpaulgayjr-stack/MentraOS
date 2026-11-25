@@ -1,7 +1,7 @@
 # AD Glass, phase 2a spec: cut the cord
 
 Status: draft for review, 2026-11-25. Owner: Paul. Engineering: Claude.
-Branch: `ad-glass/phase2` on `jpaulgayjr-stack/MentraOS`, based on `ad-glass/rebrand` (PR 1 had not merged when this branch was cut; the PR for this work targets `ad-glass/main` and shows only its own diff once PR 1 merges).
+Branch: `ad-glass/phase2` on `jpaulgayjr-stack/MentraOS`. It was cut from `ad-glass/rebrand` before PR 1 merged; `ad-glass/main` (with PR 1 and PR 3) has since been merged into it, so the PR shows only this work.
 
 Everything stated about the code was read from this checkout unless it carries a confidence tag. Line numbers are as of the base commit `6adcee24b`.
 
@@ -39,7 +39,7 @@ All Claude-decided under the 2026-10-19 delegation unless marked.
 | AD Home install | **Scan the release QR from Paul's laptop**, exactly as he installs it today: `scripts\release.cmd` in the AD Home repo, then AD Glass > Settings > Miniapp Developer > Scan. It installs as a local build and keeps running without the laptop. | See section 6. |
 | Ring pairing entry | "Pair controller" in Settings is shown always, not only in super mode. | It is the only route to `/pairing/select-controller` (`DeviceSettingsSection.tsx:294`), and the ring fix is the reason this fork exists. |
 | URL scheme | `adglass`. Applied in `scripts/ad-glass.cjs`; the code reads `APP_SCHEME` instead of the literal `com.mentra`. | Mentra sign-in no longer returns through the scheme, and AD Glass must not answer links meant for the Mentra app installed on the same phone. |
-| Bluetooth SDK update check | Runs only if the Info.plist key `MentraBluetoothSdkUpdateCheckEnabled` is `true`. AD Glass never sets it. | The request to `core.mentraglass.com` is hard-coded in native code and ignores every other setting. Opt-in fails closed if a config step is ever lost. |
+| Bluetooth SDK update check | Already stopped on `ad-glass/main` (PR 1): the SDK's start-up call to `core.mentraglass.com` does not run when the SDK's analytics are off, which AD Glass always sets (`MentraBluetoothSdkAnalyticsDisabled`). Swift tests for it run in the workflow, and the built app's Info.plist is checked for the key. | This branch first added a separate opt-in key for the same call. It was removed when `ad-glass/main` was merged in: one mechanism, the one that is tested by running it. |
 | Firmware updates | `mentraLiveOtaManifestUrl` is null and the legacy fallback is off. | OTA code serves Mentra Live and AR99 hardware. The G2 has `hasOta` false and never reaches it. |
 | Links, wallpapers, store | Privacy and terms links point at the fork notice in this repository. Wallpaper list is empty. App Store and review links are null (`appUpdates.mode: "managed"`). | They were Mentra URLs. The manifest type requires a URL for the two legal links. |
 
@@ -97,8 +97,7 @@ Rejected alternatives:
 | `mobile/modules/engine/src/services/LocalMiniappRuntime.ts` | The speech refusal rule comes from `cloudless.ts`; one line in `handleSpeak` makes every speak request `localOnly` where cloud speech is off (written inline, with names the engine's source-extraction tests already inject) |
 | `mobile/src/app/miniapps/settings/debug.tsx` | The Cloud URL switcher and the firmware URL switcher are not shown when cloudless (their presets are Mentra's servers, and saving fetches them) |
 | `mobile/src/services/miniapps/miniappInstallFlow.ts` | A package link says there is no directory instead of opening Mentra's directory website |
-| `mobile/modules/bluetooth-sdk/ios/Source/internal/BluetoothSdkUpdateCheck.swift` | Opt-in guard at the top of `start()` |
-| `mobile/scripts/ad-glass.cjs`, `ad-glass.d.cts`, `ad-glass.test.mjs` | Scheme `adglass`; the update-check key can never be set; no Core address in the packaged config |
+| `mobile/scripts/ad-glass.cjs`, `ad-glass.d.cts`, `ad-glass.test.mjs` | Scheme `adglass`, enforced both when the config is built and again while the native project is generated; no Core address in the packaged config |
 | `.github/workflows/ad-glass-ios-simulator.yml` | Three jobs: tests, simulator build with no-backend guards, boot with hosts sinkholed |
 
 Upstream tests touched:
@@ -107,7 +106,6 @@ Upstream tests touched:
 - Given the cloud fixture with one added `jest.mock` line, nothing else changed: `configuration.test.ts`, `deployment.test.ts`, `deploymentManagedMiniappSync.test.ts`, `defaultMiniapps.test.ts`, `components/dev/CloudUrl.test.tsx`.
 - `__tests__/app/native-intent.test.ts`: two expectations changed. Links to account screens used to pass through to the router; now they boot normally.
 - `MantleManager.test.ts`: one test added (the engine hand-off).
-- Not run and now out of date: the Swift unit tests in `mobile/modules/bluetooth-sdk/ios/Tests/BluetoothSdkUpdateCheckTests.swift` expect the update check to run without the opt-in. Nothing in this fork runs the SDK's Swift tests; they need the opt-in key if anyone does.
 
 Not touched: `mobile/modules/bluetooth-sdk/ios/Source/sgcs/G2.swift`, the pairing screens, the miniapp runtime's launch and install paths, `DeeplinkContext.tsx`, Android sources.
 
@@ -161,15 +159,15 @@ A miniapp whose age rating is above the app's own cannot launch: the gate needs 
 - `auth/ad-glass-account-screens.test.tsx`: the layout around the account screens redirects to the boot route and renders none of them.
 - `defaultMiniapps.adglass.test.ts`: nothing fetched, nothing installed, not "waiting".
 - Engine (`bun test`, the whole engine suite runs in the workflow): a cloudless config builds no client on init or reconnect, every cloud call fails locally, storage identity comes from the host; the speech refusal table; routing stays on-device; the real speak handler never asks the cloud where cloud speech is off.
-- `ad-glass.test.mjs`: scheme is `adglass` in `scheme` and `CFBundleURLTypes`; a leftover Mentra scheme fails the build; the update-check opt-in key is removed; no Core address in the packaged config.
+- `ad-glass.test.mjs`: scheme is `adglass` in `scheme` and `CFBundleURLTypes`, in both Info.plist passes; a leftover Mentra scheme fails the build; no Core address in the packaged config.
 - `ad-glass-hosts.test.mjs`: every `*.mentraglass.com`, `*.mentraglass.cn` and `mentra.glass` hostname written in the app's sources (`mobile/src`, `mobile/modules`, `mobile/plugins`, `mobile/scripts`, the three `cloud-v2` packages the app uses) is in the blocked-hosts list, so a host that upstream adds later fails the build until it is triaged. A second check fails if a Mentra domain appears as a bare suffix, which is how a hostname assembled at run time would look; none exists today.
 - `ad-glass-jest-gate.mjs`: the app's jest suite must pass in full, except two upstream suites that read Mentra firmware sources (`asg_client/`) this repository does not contain and so cannot load.
 
 ### Static guards on the built app (workflow)
 
 - The job builds with canary values in `EXPO_PUBLIC_CLOUD_CORE_URL`, `EXPO_PUBLIC_CLOUD_RUNTIME_URL`, `EXPO_PUBLIC_MINIAPPS_URL` and `EXPO_PUBLIC_DIRECTORY_URL`, then fails if any canary string is in `main.jsbundle` or in the packaged Expo config. This is the "packaged manifest has a non-null Core or Runtime" guard: the manifest is code, so the proof is that nothing in the bundle read those variables. The deployment id `ad-glass-local` must be present.
-- `Info.plist`: URL schemes contain `adglass` and not `com.mentra`; `MentraBluetoothSdkUpdateCheckEnabled` is absent; the phase 1 checks stay.
-- Source grep: the opt-in guard is still in `BluetoothSdkUpdateCheck.swift` (it must survive upstream merges, like the ring fix).
+- `Info.plist`: URL schemes contain `adglass` and not `com.mentra`; the phase 1 checks stay (identity, prompts, `MentraBluetoothSdkAnalyticsDisabled`, Firebase off, no Sentry DSN).
+- Source greps: the ring fix, the SDK start-up guard, `telemetry: false` in the embedded manifest, and the engine's no-cloud guard are still in place (they must survive upstream merges).
 
 ### Simulator boot with Mentra blocked (workflow)
 
@@ -207,7 +205,7 @@ Bluetooth does not exist in the simulator. Pairing, reconnection, the display, t
 | # | Area | After phase 2a |
 |---|---|---|
 | 1 | Accounts and login | `LocalAuthProvider`; `accountClient.ts` is never constructed. Auth screens remain in the bundle but nothing navigates to them (the deep-link fallback goes home). Authing and Entra code is unreachable; removal is 2b |
-| 2 | Version check | Not called on a cloudless deployment; the cached floor is never read. Bluetooth SDK update check is opt-in and off |
+| 2 | Version check | Not called on a cloudless deployment; the cached floor is never read. The Bluetooth SDK's start-up check is off with the SDK's analytics (PR 1) |
 | 3 | Support profile, fleet, workspaces, declared age, core token to glasses | Not started: `hasCore()` is false. `FleetSheets` is not mounted |
 | 4 | Miniapp directory, defaults, registry | No defaults, no first-party host, no directory URL. Registry calls throw locally before any request and installs continue |
 | 5 | Firmware and OTA | No manifest URL, no legacy fallback, so the update check returns before any fetch. The legacy URL constants remain in source for Mentra Live glasses only |
@@ -255,9 +253,9 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 
 ## 12. The three most likely silent failures
 
-1. **A cloud call that only happens on a phone.** Something that needs connected glasses (a core-token push, an OTA probe, a fleet report) reaches for a Mentra host and the simulator never sees it. Guards: the engine builds no cloud client at all in cloudless mode (unit-tested), so those paths throw locally; the native update check is opt-in; the hosts test forces every Mentra hostname in the source to be triaged. Residual risk: native Swift code under `modules/*/ios` that builds its own request. Read for this change: only `BluetoothSdkUpdateCheck.swift`, PostHog (off) and the OTA manifest URLs do. The OTA constants (`OtaManifest.swift:6,183`, `otaManifestPolicy.ts:1`, `mtkDowngrade.ts`) stay compiled in. On the JavaScript side the manifest URL resolves to null here, so no check starts; on the native side they are reached only from firmware-update calls for Mentra Live glasses, which a G2 never makes. That last point is a reading of the code, not something a test checks.
+1. **A cloud call that only happens on a phone.** Something that needs connected glasses (a core-token push, an OTA probe, a fleet report) reaches for a Mentra host and the simulator never sees it. Guards: the engine builds no cloud client at all in cloudless mode (unit-tested), so those paths throw locally; the native update check does not run with the SDK's analytics off (Swift-tested); the hosts test forces every Mentra hostname in the source to be triaged. Residual risk: native Swift code under `modules/*/ios` that builds its own request. Read for this change: only `BluetoothSdkUpdateCheck.swift`, PostHog (off) and the OTA manifest URLs do. The OTA constants (`OtaManifest.swift:6,183`, `otaManifestPolicy.ts:1`, `mtkDowngrade.ts`) stay compiled in. On the JavaScript side the manifest URL resolves to null here, so no check starts; on the native side they are reached only from firmware-update calls for Mentra Live glasses, which a G2 never makes. That last point is a reading of the code, not something a test checks.
 2. **AD Home's data silently lands in the wrong place or nowhere.** If the storage identity did not resolve, storage calls would fail and AD Home would look fine but forget its notes. Guard: `getUserId` is supplied and unit-tested; checklist steps 8 and 6.
-3. **An upstream merge quietly brings the cloud back.** For example upstream rewrites `officialManifest.ts` and the merge takes theirs. Guards: the canary check on the built bundle, the manifest unit test, the simulator sinkhole, and the grep for the native opt-in guard.
+3. **An upstream merge quietly brings the cloud back.** For example upstream rewrites `officialManifest.ts` and the merge takes theirs. Guards: the canary check on the built bundle, the manifest unit test, the simulator sinkhole and network-log check, and the source greps in the workflow.
 
 ## 13. Blast radius
 
@@ -285,7 +283,6 @@ Kept in `mobile/scripts/ad-glass-blocked-hosts.txt`; the list there is authorita
 6. Android.
 7. Optional: build Captions or Translation from `miniapps/` if Paul wants them.
 8. Make `resolvedEndpoints()` in `mobile/src/services/cloudClient.ts` say in its type that it can return nulls. Today it claims strings; the live callers cope, but the compiler would not catch a new one. It goes away with the dead account code in item 1.
-9. Update or remove `BluetoothSdkUpdateCheckTests.swift` (expects the check to run without the opt-in).
 
 ## 16. Needed from Paul
 

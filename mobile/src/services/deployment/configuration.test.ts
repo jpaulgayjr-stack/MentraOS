@@ -72,6 +72,8 @@ it("embeds a complete schema-v1 official manifest and respects build environment
   expect(manifest.auth).toEqual({mode: "mentra-account"})
   expect(manifest.glasses.allowedModelsOverride).toBeNull()
   expect(manifest.features.runtimeRealtimeSession).toBe(true)
+  // This suite runs against upstream's manifest (test-utils/mentraCloudManifest), which ships true. AD Glass's own
+  // manifest never starts Mentra's collection: adGlassManifest.test.ts asserts telemetry false there.
   expect(manifest.telemetry).toBe(true)
 })
 
