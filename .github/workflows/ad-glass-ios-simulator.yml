@@ -66,7 +66,7 @@ jobs:
 
       - name: Fork guards (config, hostnames, ring fix, SDK update check)
         run: |
-          node --test mobile/scripts/ad-glass.test.mjs mobile/scripts/ad-glass-hosts.test.mjs
+          node --test mobile/scripts/ad-glass.test.mjs mobile/scripts/ad-glass-hosts.test.mjs mobile/scripts/ad-glass-jest-gate.test.mjs
           python3 -m py_compile mobile/scripts/ad-glass-sim/sinkhole.py mobile/scripts/ad-glass-sim/pick-simulator.py mobile/scripts/ad-glass-sim/sinkhole-hosts.py
           bash -n mobile/scripts/ad-glass-sim/boot.sh
           # The R1 ring fix must survive every upstream merge until upstream has
@@ -95,26 +95,20 @@ jobs:
         working-directory: mobile
         run: bun run compile
 
-      - name: Engine tests (no cloud, speech routing)
+      - name: Engine tests
         working-directory: mobile/modules/engine
         run: |
-          # Each file in its own process, as the engine's own test script does.
-          for file in \
-            src/services/__tests__/cloudless.test.ts \
-            src/services/__tests__/CloudClientService.cloudless.test.ts \
-            src/services/__tests__/CloudClientService.coreSession.test.ts \
-            src/services/__tests__/cloudEndpointPolicy.test.ts \
-            src/services/__tests__/TranscriptionRouting.test.ts \
-            src/services/__tests__/TranscriptionSubscriptions.test.ts \
-            src/services/__tests__/LocalMiniappRuntime.transcription.test.ts \
-            src/services/__tests__/LocalMiniappRuntime.finishTranscription.test.ts
-          do
-            bun test "$file"
-          done
+          # The engine's own runner: every test file in its own bun process.
+          bash ./scripts/test.sh
 
       - name: App tests (jest)
         working-directory: mobile
-        run: bun run test
+        run: |
+          # jest's own exit status is not the verdict: two upstream suites cannot
+          # load here (they read Mentra firmware sources this repository does not
+          # contain). The gate allows exactly those and nothing else.
+          bun run test --json --outputFile="$RUNNER_TEMP/jest.json" || true
+          node scripts/ad-glass-jest-gate.mjs "$RUNNER_TEMP/jest.json" "$PWD"
 
   simulator:
     name: Unsigned simulator build
