@@ -5,7 +5,7 @@ import {VARIANT_RE, resolveAndroidPackageName} from "./scripts/android-package-n
 import {getBuildNumber} from "./scripts/build-number.mjs"
 import {resolveAppTrack} from "./scripts/app-track.cjs"
 import {backendTarget} from "./scripts/backend-target.cjs"
-import {AD_GLASS, applyAdGlass, isAdGlass} from "./scripts/ad-glass.cjs"
+import {SIGHTLINE, applySightline, isSightline} from "./scripts/sightline.cjs"
 
 const familyBaseVersion = require("../package.json").version as string
 
@@ -69,24 +69,24 @@ const VARIANTS = {
     icon: "./assets/app-icons/ic_launcher.png",
     adaptiveIcon: "./assets/app-icons/ic_launcher_foreground.png",
   },
-  // AD Glass (docs/ad-glass/spec-phase1.md): our own name, bundle id and icon,
+  // Sightline (docs/sightline/spec-phase1.md): our own name, bundle id and icon,
   // no Firebase and no app links, which only Mentra's Apple team can claim. The
   // scheme stays Mentra's in phase 1 because their sign-in returns through it.
-  adglass: {
-    appName: AD_GLASS.appName,
-    packageName: AD_GLASS.bundleId,
+  sightline: {
+    appName: SIGHTLINE.appName,
+    packageName: SIGHTLINE.bundleId,
     scheme: "com.mentra",
     appLinks: false,
     includeFirebase: false,
     googleServicesFile: null,
     googleServicesPlist: null,
-    icon: AD_GLASS.icon,
-    adaptiveIcon: AD_GLASS.adaptiveIcon,
+    icon: SIGHTLINE.icon,
+    adaptiveIcon: SIGHTLINE.adaptiveIcon,
   },
 } as const
 
-const variant = isAdGlass()
-  ? VARIANTS.adglass
+const variant = isSightline()
+  ? VARIANTS.sightline
   : process.env.EXPO_PUBLIC_DEPLOYMENT_REGION === "china"
     ? VARIANTS.cn
     : resolveAppTrack() === "dev"
@@ -158,7 +158,7 @@ module.exports = ({config}: ConfigContext): Partial<ExpoConfig> => {
   }
 
   return withAppLabel(appName)(
-    applyAdGlass({
+    applySightline({
     ...config,
     extra: packagedExtra,
     // A CI build (PR or release) carries its per-build values here, never in the JS bundle, so packaging can rewrite
@@ -435,7 +435,7 @@ module.exports = ({config}: ConfigContext): Partial<ExpoConfig> => {
                 podspec: "../podspecs/AzureCommunicationCommon.podspec",
               },
               {
-                // AD Glass: the trunk pod's download host (download.onnxruntime.ai)
+                // Sightline: the trunk pod's download host (download.onnxruntime.ai)
                 // is gone. Take the same Microsoft binary from NuGet instead; see
                 // podspecs/onnxruntime-c.podspec.
                 name: "onnxruntime-c",

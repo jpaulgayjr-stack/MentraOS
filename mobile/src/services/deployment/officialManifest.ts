@@ -60,7 +60,7 @@ export function createOfficialManifest(): DeploymentManifest {
       onDeviceSpeech: true,
       navigation: process.env.EXPO_PUBLIC_DEPLOYMENT_REGION !== "china",
     },
-    // AD Glass: never start Mentra's Sentry or Firebase collection (this flag
+    // Sightline: never start Mentra's Sentry or Firebase collection (this flag
     // gates both). Upstream ships `true`.
     telemetry: false,
   }

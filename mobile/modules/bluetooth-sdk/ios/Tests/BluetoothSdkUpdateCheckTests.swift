@@ -151,13 +151,13 @@ final class BluetoothSdkUpdateCheckTests: XCTestCase {
         XCTAssertTrue(notices.values.isEmpty)
     }
 
-    // AD Glass: the fork's change to start(). An app that disables the SDK's analytics in its
+    // Sightline: the fork's change to start(). An app that disables the SDK's analytics in its
     // Info.plist sends no update check. The second test is the control: the same kind of bundle
     // without the switch still sends one, so the first cannot pass for an unrelated reason.
 
     private func temporaryBundle(analyticsDisabled: Bool) throws -> Bundle {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("adglass-update-check-\(UUID().uuidString).bundle", isDirectory: true)
+            .appendingPathComponent("sightline-update-check-\(UUID().uuidString).bundle", isDirectory: true)
         #if os(macOS)
             let infoDirectory = root.appendingPathComponent("Contents", isDirectory: true)
         #else
@@ -165,7 +165,7 @@ final class BluetoothSdkUpdateCheckTests: XCTestCase {
         #endif
         try FileManager.default.createDirectory(at: infoDirectory, withIntermediateDirectories: true)
         let info: [String: Any] = [
-            "CFBundleIdentifier": "test.adglass.update-check",
+            "CFBundleIdentifier": "test.sightline.update-check",
             "MentraBluetoothSdkAnalyticsDisabled": analyticsDisabled,
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
